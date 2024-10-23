@@ -2,6 +2,18 @@ local _, LRP = ...
 
 local SharedMedia = LibStub("LibSharedMedia-3.0")
 
+if LRP.isRetail then
+	AddonCompartmentFrame:RegisterAddon({
+		text = "Timeline Reminders",
+		icon = "Interface\\AddOns\\TimelineReminders\\Media\\Textures\\logo_secondary.blp",
+		registerForAnyClick = true,
+		notCheckable = true,
+		func = function()
+			LRP.window:SetShown(not LRP.window:IsShown())
+		end,
+	})
+end
+
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:RegisterEvent("ADDON_LOADED")
