@@ -1,0 +1,41 @@
+## Interface: 40400
+## Version: 1.55
+## Title: Timeline Reminders
+## Author: Naemesis
+## X-Flavor: Cata
+## SavedVariables: LiquidRemindersSaved
+## OptionalDeps: ViragDevTool, MRT, WeakAuras, Liquid, Pescorus
+
+embeds.xml
+LRFont.xml
+
+Compatibility.lua
+GlobalSettings.lua
+Modernize.lua
+Utility.lua
+TextFormatter.lua
+TimelineData.lua
+
+# Interface
+Interface/Widgets/Button.lua
+Interface/Widgets/Slider.lua
+Interface/Widgets/CheckButton.lua
+Interface/Widgets/Window.lua
+Interface/Widgets/Dropdown.lua
+Interface/Widgets/EditBox.lua
+Interface/Widgets/SpellIcon.lua
+Interface/Widgets/ColorPicker.lua
+
+Interface/ConfirmWindow.lua
+Interface/Timeline.lua
+Interface/ReminderConfig.lua
+Interface/Interface.lua
+
+# Display
+Display/NoteInterpreter.lua
+Display/Anchor.lua
+Display/TextReminder.lua
+Display/SpellReminder.lua
+Display/Display.lua
+
+TimelineReminders.lua
