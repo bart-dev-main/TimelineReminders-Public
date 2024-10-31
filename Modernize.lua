@@ -1,6 +1,6 @@
 local _, LRP = ...
 
-local version = 5
+local version = 7
 
 function LRP:Modernize()
     local internalVersion = LiquidRemindersSaved.internalVersion or 0
@@ -46,6 +46,35 @@ function LRP:Modernize()
                 LiquidRemindersSaved.spellBookData[10][class] = CopyTable(LiquidRemindersSaved.spellBookData[class])
 
                 LiquidRemindersSaved.spellBookData[class] = nil
+            end
+        end
+    end
+
+    -- Some users were reporting Lua errors due to encounter reminder tables not having difficulty subtables
+    -- This should have been taken care of in version 4, but somehow maybe have failed
+    if internalVersion < 6 then
+        for _, encounterReminders in pairs(LiquidRemindersSaved.reminders) do
+            if not encounterReminders[1] then
+                encounterReminders[1] = {}
+            end
+
+            if not encounterReminders[2] then
+                encounterReminders[2] = {}
+            end
+        end
+    end
+
+    -- spellID field in timeline changed to value
+    if internalVersion < 7 then
+        for _, difficultyReminders in pairs(LiquidRemindersSaved.reminders) do
+            for _, encounterReminders in pairs(difficultyReminders) do
+                for _, reminderData in pairs(encounterReminders) do
+                    if reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.spellID then
+                        reminderData.trigger.relativeTo.value = reminderData.trigger.relativeTo.spellID
+
+                        reminderData.trigger.relativeTo.spellID = nil
+                    end
+                end
             end
         end
     end

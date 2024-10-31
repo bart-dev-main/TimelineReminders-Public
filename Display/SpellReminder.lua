@@ -72,6 +72,10 @@ function LRP:CreateSpellReminder(callback)
         spellReminder:UpdateSize()
         spellReminder:UpdateAlignment()
         spellReminder:UpdateTextVisibility()
+
+        if WeakAuras and WeakAuras.ScanEvents then
+            WeakAuras.ScanEvents("TIMELINE_REMINDERS_SHOW", "SPELL", id, reminderData)
+        end
     end
 
     function spellReminder:GetExpirationTime()

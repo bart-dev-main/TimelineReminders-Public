@@ -195,7 +195,7 @@ function LRP:IsRelevantReminder(reminderData)
             end
 
             -- Spec reminder
-            if specIndex == (LRP.isRetail and GetSpecialization() or GetPrimaryTalentTree()) then
+            if specIndex == (LRP.isRetail and GetSpecialization() or GetPrimaryTalentTree and GetPrimaryTalentTree()) then
                 return true
             end
         end

@@ -187,7 +187,7 @@ function LRP:CreateWindow(name, exitable, movable, resizable)
     end
 
     LRP:RestoreSize(window, name)
-    -- LRP:RestorePosition(window, name)
+    --LRP:RestorePosition(window, name)
 
     return window
 end

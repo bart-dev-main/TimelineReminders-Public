@@ -50,7 +50,7 @@ local function ParseTrigger(triggerText)
         return {
             relativeTo = {
                 event = event,
-                spellID = spellID,
+                value = spellID,
                 count = count
             },
             time = minutes * 60 + seconds,

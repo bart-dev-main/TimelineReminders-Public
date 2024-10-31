@@ -2,6 +2,7 @@
 ## Version: 1.55
 ## Title: Timeline Reminders
 ## Author: Naemesis
+## IconTexture: Interface\AddOns\TimelineReminders\Media\Textures\logo_secondary.blp
 ## X-Flavor: Cata
 ## SavedVariables: LiquidRemindersSaved
 ## OptionalDeps: ViragDevTool, MRT, WeakAuras, Liquid, Pescorus
@@ -15,6 +16,15 @@ Modernize.lua
 Utility.lua
 TextFormatter.lua
 TimelineData.lua
+
+# Timeline data
+TimelineData/Cata/Raids/Firelands/Bethtilac.lua
+TimelineData/Cata/Raids/Firelands/LordRhyolith.lua
+TimelineData/Cata/Raids/Firelands/Alysrazor.lua
+TimelineData/Cata/Raids/Firelands/Shannox.lua
+TimelineData/Cata/Raids/Firelands/Baleroc.lua
+TimelineData/Cata/Raids/Firelands/MajordomoStaghelm.lua
+TimelineData/Cata/Raids/Firelands/Ragnaros.lua
 
 # Interface
 Interface/Widgets/Button.lua

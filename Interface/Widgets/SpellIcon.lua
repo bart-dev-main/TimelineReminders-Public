@@ -24,19 +24,31 @@ function LRP:CreateSpellIcon(parent)
         local spellInfo = spellID and LRP.GetSpellInfo(spellID)
 
         if spellInfo then
-            local spell = Spell:CreateFromSpellID(spellID)
+			local serverTime = GetServerTime()
+			local cachedSpellInfo = LiquidRemindersSaved.spellDescriptionCache[spellID]
 
-            spell:ContinueOnSpellLoad(
-                function()
-                    local description = spell:GetSpellDescription()
+			if cachedSpellInfo and cachedSpellInfo.time > serverTime - 604800 then -- Cached spell info becomes stale after a week
+				spellIcon.tooltipText = string.format("|cFFFFCC00%s|n%d|r|n|n%s", spellInfo.name, spellID, cachedSpellInfo.description)
+			else
+				local spell = Spell:CreateFromSpellID(spellID)
 
-                    spellIcon.tooltipText = string.format("|cFFFFCC00%s|n%d|r", spellInfo.name, spellID)
+				spell:ContinueOnSpellLoad(
+					function()
+						local description = spell:GetSpellDescription()
 
-                    if description and description ~= "" then
-                        spellIcon.tooltipText = string.format("%s|n|n%s", spellIcon.tooltipText, description)
-                    end
-                end
-            )
+						spellIcon.tooltipText = string.format("|cFFFFCC00%s|n%d|r", spellInfo.name, spellID)
+
+						if description and description ~= "" then
+							spellIcon.tooltipText = string.format("%s|n|n%s", spellIcon.tooltipText, description)
+
+							LiquidRemindersSaved.spellDescriptionCache[spellID] = {
+								time = serverTime,
+								description = description
+							}
+						end
+					end
+				)
+			end
 
             spellIcon.tex:SetTexture(spellInfo.iconID)
         else

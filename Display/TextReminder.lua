@@ -56,6 +56,10 @@ function LRP:CreateTextReminder(callback)
 
         textReminder:UpdateSize()
         textReminder:UpdateAlignment()
+
+        if WeakAuras and WeakAuras.ScanEvents then
+            WeakAuras.ScanEvents("TIMELINE_REMINDERS_SHOW", "TEXT", id, reminderData)
+        end
     end
 
     function textReminder:GetExpirationTime()

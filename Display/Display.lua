@@ -28,7 +28,8 @@ local phaseEvents = {
 	SPELL_AURA_REMOVED = {},
 	UNIT_SPELLCAST_START = {},
 	UNIT_SPELLCAST_SUCCEEDED = {},
-	UNIT_DIED = {}
+	UNIT_DIED = {},
+	CHAT_MSG_MONSTER_YELL = {},
 }
 
 local simulationTimers = {}
@@ -40,7 +41,8 @@ local reminderEvents = {
 	SPELL_AURA_REMOVED = {},
 	UNIT_SPELLCAST_START = {},
 	UNIT_SPELLCAST_SUCCEEDED = {},
-	UNIT_DIED = {}
+	UNIT_DIED = {},
+	CHAT_MSG_MONSTER_YELL = {},
 }
 
 function LRP:InitializeDisplay()
@@ -94,9 +96,8 @@ local function QueueReminder(id, reminderData, simulationOffset, simulationEvent
 	local encounterTime = reminderData.trigger.time
 	local duration = reminderData.trigger.duration
 
-	-- This currently only works correctly for reminders relative to pull
-	-- For reminder relative to an event, it's comparing the time after the event to the simulation offset
-	if simulationEventTime + encounterTime <= simulationOffset then return end -- Don't show reminders that will have already run out (only relevant for simulations)
+	-- Don't show reminders that will have already run out (only relevant for simulations)
+	if simulationEventTime + encounterTime <= simulationOffset then return end
 
 	-- Don't queue reminders with negative time. This usually means the duration is longer than the relative time to phase change
 	local queueTime = math.max(simulationEventTime + encounterTime - simulationOffset - duration, 0)
@@ -137,7 +138,8 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 		SPELL_AURA_REMOVED = {},
 		UNIT_SPELLCAST_START = {},
 		UNIT_SPELLCAST_SUCCEEDED = {},
-		UNIT_DIED = {}
+		UNIT_DIED = {},
+		CHAT_MSG_MONSTER_YELL = {}
 	}
 
 	reminderEvents = {
@@ -147,7 +149,8 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 		SPELL_AURA_REMOVED = {},
 		UNIT_SPELLCAST_START = {},
 		UNIT_SPELLCAST_SUCCEEDED = {},
-		UNIT_DIED = {}
+		UNIT_DIED = {},
+		CHAT_MSG_MONSTER_YELL = {}
 	}
 
 	local addOnReminders = LiquidRemindersSaved.reminders[encounterID] and LiquidRemindersSaved.reminders[encounterID][difficulty] or {}
@@ -165,20 +168,20 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 
 				if relativeTo then
 					local event = relativeTo.event
-					local spellID = relativeTo.spellID
+					local value = relativeTo.value
 					local count = relativeTo.count
 
-					if not reminderEvents[event][spellID] then
-						reminderEvents[event][spellID] = {
+					if not reminderEvents[event][value] then
+						reminderEvents[event][value] = {
 							count = 0
 						}
 					end
 
-					if not reminderEvents[event][spellID][count] then
-						reminderEvents[event][spellID][count] = {}
+					if not reminderEvents[event][value][count] then
+						reminderEvents[event][value][count] = {}
 					end
 
-					reminderEvents[event][spellID][count][id] = reminderData
+					reminderEvents[event][value][count][id] = reminderData
 				else
 					QueueReminder(id, reminderData, simulationOffset or 0, 0)
 				end
@@ -191,16 +194,16 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 	-- This is used to record the timing of the player's death
 	for phaseCount, phaseInfo in ipairs(encounterInfo[difficulty].phases) do
 		local event = phaseInfo.event
-		local spellID = phaseInfo.spellID
+		local value = phaseInfo.value
 		local count = phaseInfo.count
 
-		if not phaseEvents[event][spellID] then
-			phaseEvents[event][spellID] = {
+		if not phaseEvents[event][value] then
+			phaseEvents[event][value] = {
 				count = 0
 			}
 		end
 
-		phaseEvents[event][spellID][count] = phaseCount
+		phaseEvents[event][value][count] = phaseCount
 	end
 
 	-- Clear death data 10s into an encounter
@@ -227,19 +230,32 @@ local function OnDeath(destGUID)
 	LRP:BuildDeathLine()
 end
 
-local function OnEvent(event, spellID, simulationOffset, simulationEventTime)
+local function OnEvent(event, value, simulationOffset, simulationEventTime)
 	local eventTable = reminderEvents[event]
 	local phaseTable = phaseEvents[event]
 
 	if not eventTable then return end
-	if not spellID then return end
+	if not value then return end
+
+	-- For CHAT_MSG_MONSTER_YELL, we match() the values rather than use them as indices directly
+	if event == "CHAT_MSG_MONSTER_YELL" then
+		for v in pairs(eventTable) do
+			if v ~= "" then -- Don't match with empty string (in case user forgot to enter something)
+				if value:match(v) then
+					value = v
+
+					break
+				end
+			end
+		end
+	end
 
 	-- Check if any reminders are relative to this event
 	-- If so, queue them
-	if eventTable[spellID] then
-		eventTable[spellID].count = eventTable[spellID].count + 1
+	if eventTable[value] then
+		eventTable[value].count = eventTable[value].count + 1
 
-		local reminders = eventTable[spellID][eventTable[spellID].count]
+		local reminders = eventTable[value][eventTable[value].count]
 
 		if reminders then
 			for id, reminderData in pairs(reminders) do
@@ -247,12 +263,12 @@ local function OnEvent(event, spellID, simulationOffset, simulationEventTime)
 			end
 		end
 	end
-
+	
 	-- Check if this event starts a new phase (for use in death data)
-	if phaseTable[spellID] then
-		phaseTable[spellID].count = phaseTable[spellID].count + 1
+	if phaseTable[value] then
+		phaseTable[value].count = phaseTable[value].count + 1
 
-		local newPhase = phaseTable[spellID][phaseTable[spellID].count]
+		local newPhase = phaseTable[value][phaseTable[value].count]
 
 		-- If this event starts a new phase
 		if newPhase then
@@ -286,7 +302,7 @@ function LRP:StartSimulation(instanceType, instance, encounter, difficulty, tota
 					C_Timer.NewTimer(
 						math.max(encounterTime - simulationOffset, 0),
 						function()
-							OnEvent(eventInfo.event, eventInfo.spellID, eventBeforeOffset and simulationOffset, eventBeforeOffset and encounterTime)
+							OnEvent(eventInfo.event, eventInfo.value, eventBeforeOffset and simulationOffset, eventBeforeOffset and encounterTime)
 						end
 					)
 				)
@@ -326,6 +342,7 @@ eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+eventFrame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
 
 eventFrame:SetScript(
     "OnEvent",
@@ -364,6 +381,10 @@ eventFrame:SetScript(
 			if not castGUID then return end
 
 			OnEvent(event, spellID)
+		elseif event == "CHAT_MSG_MONSTER_YELL" then
+			local text = ...
+
+			OnEvent(event, text)
 		end
     end
 )

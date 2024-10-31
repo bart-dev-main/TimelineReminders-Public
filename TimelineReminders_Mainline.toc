@@ -2,6 +2,7 @@
 ## Version: 1.55
 ## Title: Timeline Reminders
 ## Author: Naemesis
+## IconTexture: Interface\AddOns\TimelineReminders\Media\Textures\logo_secondary.blp
 ## X-Flavor: Mainline
 ## SavedVariables: LiquidRemindersSaved
 ## OptionalDeps: ViragDevTool, MRT, WeakAuras, Liquid, Pescorus
@@ -15,6 +16,53 @@ Modernize.lua
 Utility.lua
 TextFormatter.lua
 TimelineData.lua
+
+# Timeline data
+TimelineData/Debug/Shriekwing.lua
+TimelineData/Debug/AffrontOfChallengers.lua
+
+TimelineData/TWW/Raids/NerubarPalace/Ulgrax.lua
+TimelineData/TWW/Raids/NerubarPalace/BloodboundHorror.lua
+TimelineData/TWW/Raids/NerubarPalace/Sikran.lua
+TimelineData/TWW/Raids/NerubarPalace/Rashanan.lua
+TimelineData/TWW/Raids/NerubarPalace/BroodtwisterOvinax.lua
+TimelineData/TWW/Raids/NerubarPalace/Kyveza.lua
+TimelineData/TWW/Raids/NerubarPalace/SilkenCourt.lua
+TimelineData/TWW/Raids/NerubarPalace/QueenAnsurek.lua
+
+TimelineData/TWW/Dungeons/AraKara/Avanoxx.lua
+TimelineData/TWW/Dungeons/AraKara/Anubzekt.lua
+TimelineData/TWW/Dungeons/AraKara/KikatalTheHarvester.lua
+
+TimelineData/TWW/Dungeons/CityOfThreads/OratorKrixvizk.lua
+TimelineData/TWW/Dungeons/CityOfThreads/FangsOfTheQueen.lua
+TimelineData/TWW/Dungeons/CityOfThreads/TheCoaglamation.lua
+TimelineData/TWW/Dungeons/CityOfThreads/IzoTheGrandSplicer.lua
+
+TimelineData/TWW/Dungeons/Dawnbreaker/SpeakerShadowcrown.lua
+TimelineData/TWW/Dungeons/Dawnbreaker/Anubikkaj.lua
+TimelineData/TWW/Dungeons/Dawnbreaker/Rashanan.lua
+
+TimelineData/TWW/Dungeons/Stonevault/EDNA.lua
+TimelineData/TWW/Dungeons/Stonevault/Skarmorak.lua
+TimelineData/TWW/Dungeons/Stonevault/MasterMachinists.lua
+TimelineData/TWW/Dungeons/Stonevault/VoidSpeakerEirich.lua
+
+TimelineData/TWW/Dungeons/MistsOfTirnaScithe/IngraMaloch.lua
+TimelineData/TWW/Dungeons/MistsOfTirnaScithe/Tredova.lua
+
+TimelineData/TWW/Dungeons/NecroticWake/AmarthTheHarvester.lua
+TimelineData/TWW/Dungeons/NecroticWake/SurgeonStitchflesh.lua
+TimelineData/TWW/Dungeons/NecroticWake/NalthorTheRimebinder.lua
+
+TimelineData/TWW/Dungeons/SiegeOfBoralus/DreadCaptainLockwood.lua
+TimelineData/TWW/Dungeons/SiegeOfBoralus/HadalDarkfathom.lua
+TimelineData/TWW/Dungeons/SiegeOfBoralus/ViqGoth.lua
+
+TimelineData/TWW/Dungeons/GrimBatol/GeneralUmbriss.lua
+TimelineData/TWW/Dungeons/GrimBatol/ForgemasterThrongus.lua
+TimelineData/TWW/Dungeons/GrimBatol/DrahgaShadowburner.lua
+TimelineData/TWW/Dungeons/GrimBatol/ErudaxTheDukeOfBelow.lua
 
 # Interface
 Interface/Widgets/Button.lua

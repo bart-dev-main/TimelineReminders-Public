@@ -30,6 +30,7 @@ eventFrame:SetScript(
                 SharedMedia:Register("font", "PT Sans Narrow", "Interface\\Addons\\TimelineReminders\\Media\\Fonts\\PTSansNarrow.ttf")
 
                 if not LiquidRemindersSaved then LiquidRemindersSaved = {} end
+				if not LiquidRemindersSaved.spellDescriptionCache then LiquidRemindersSaved.spellDescriptionCache = {} end
                 if not LiquidRemindersSaved.reminders then LiquidRemindersSaved.reminders = {} end
                 if not LiquidRemindersSaved.spellBookData then LiquidRemindersSaved.spellBookData = {} end
                 if not LiquidRemindersSaved.deathData then LiquidRemindersSaved.deathData = {} end
@@ -80,7 +81,7 @@ eventFrame:SetScript(
 )
 
 SLASH_TIMELINEREMINDERS1 = "/lr"
-SLASH_TIMELINEREMINDERS2 = "/tl"
+SLASH_TIMELINEREMINDERS2 = "/tr"
 SLASH_TIMELINEREMINDERS3 = "/timelinereminder"
 SLASH_TIMELINEREMINDERS4 = "/timelinereminders"
 

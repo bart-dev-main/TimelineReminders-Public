@@ -199,29 +199,29 @@ local function BuildTrackLabels()
     local visibleEvents = {}
     local invisibleEvents = {}
 
-    for _, spellData in ipairs(timelineData.events) do
-        if spellData.show then
-            if trackVisibility[spellData.spellID] then
-                table.insert(visibleEvents, spellData)
+    for _, eventData in ipairs(timelineData.events) do
+        if eventData.show then
+            if trackVisibility[eventData.value] then
+                table.insert(visibleEvents, eventData)
             else
-                table.insert(invisibleEvents, spellData)
+                table.insert(invisibleEvents, eventData)
             end
         end
     end
 
     tAppendAll(visibleEvents, invisibleEvents)
 
-    for i, spellData in ipairs(visibleEvents) do
-        if spellData.show then
+    for i, eventData in ipairs(visibleEvents) do
+        if eventData.show then
             visibleLabelCount = visibleLabelCount + 1
             
-            local spellInfo = LRP.GetSpellInfo(spellData.spellID)
-            local isTrackVisible = trackVisibility[spellInfo.spellID]
+            local spellInfo = LRP.GetSpellInfo(eventData.value)
+            local isTrackVisible = trackVisibility[eventData.value]
 
             -- Icon
             local trackIcon = trackLabelPool[visibleLabelCount] and trackLabelPool[visibleLabelCount].icon or LRP:CreateSpellIcon(view)
 
-            trackIcon:SetSpellID(spellData.spellID)
+            trackIcon:SetSpellID(eventData.value)
             trackIcon:Show()
             trackIcon:SetSize(trackHeight, trackHeight)
             trackIcon:SetPoint("TOPRIGHT", view, "TOPLEFT", -spacing, (visibleLabelCount - 1) * (-trackHeight - spacing))
@@ -246,7 +246,7 @@ local function BuildTrackLabels()
             trackTitle.text:GetWidth()
 
             -- Toggle
-            trackTitle.spellID = spellInfo.spellID
+            trackTitle.spellID = eventData.value
 
             local trackToggle = trackLabelPool[visibleLabelCount] and trackLabelPool[visibleLabelCount].toggle
 
@@ -326,13 +326,13 @@ local function BuildTrackEntries()
     local visibleTracks = 0
     local trackVisibility = LiquidRemindersSaved.settings.timeline.trackVisibility[selectedEncounterID]
 
-    for _, spellData in ipairs(timelineData.events) do
-        if spellData.show and trackVisibility[spellData.spellID] then
+    for _, eventData in ipairs(timelineData.events) do
+        if eventData.show and trackVisibility[eventData.value] then
             visibleTracks = visibleTracks + 1
 
-            local color = spellData.color
+            local color = eventData.color
 
-            for _, entry in ipairs(spellData.entries) do
+            for _, entry in ipairs(eventData.entries) do
                 poolIndex = poolIndex + 1
 
                 local startTime = entry[1] -- Number of seconds into the fight that this event occurs
@@ -502,11 +502,11 @@ local function GetRelativeToTime(reminder)
     end
 
     local event = relativeTo.event
-    local spellID = relativeTo.spellID
+    local value = relativeTo.value
     local count = relativeTo.count
 
     for _, eventInfo in ipairs(timelineData.events) do
-        if event == eventInfo.event and spellID == eventInfo.spellID then
+        if event == eventInfo.event and value == eventInfo.value then
             return eventInfo.entries[count] and eventInfo.entries[count][1]
         end
     end
@@ -583,10 +583,13 @@ local function CreateReminderLine(reminderID)
     -- Show some additional information in tooltip if the reminder references an unknown event, or exceeds the timeline span
     if reminderLine.unknownEvent then
         local relativeTo = reminder.trigger.relativeTo
-        local spellInfo = LRP.GetSpellInfo(relativeTo.spellID)
-        local spellName = spellInfo and spellInfo.name or "unknown spell"
 
-        reminderLine.icon.secondaryTooltipText = string.format("%s|n|W%d:%d (%s)|w", relativeTo.event, relativeTo.spellID, relativeTo.count, spellName)
+        reminderLine.icon.secondaryTooltipText = string.format(
+            "Event: %s|nValue: %s|nCount: %s",
+            relativeTo.event,
+            tostring(relativeTo.value),
+            relativeTo.count
+        )
     else
         reminderLine.icon.secondaryTooltipText = nil
     end
@@ -730,10 +733,13 @@ local function CreateReminderLineMRT(id, reminder)
     -- Show some additional information in tooltip if the reminder references an unknown event, or exceeds the timeline span
     if reminderLine.unknownEvent then
         local relativeTo = reminder.trigger.relativeTo
-        local spellInfo = LRP.GetSpellInfo(relativeTo.spellID)
-        local spellName = spellInfo and spellInfo.name or "unknown spell"
-
-        reminderLine.icon.secondaryTooltipText = string.format("%s|n|W%d:%d (%s)|w", relativeTo.event, relativeTo.spellID, relativeTo.count, spellName)
+        
+        reminderLine.icon.secondaryTooltipText = string.format(
+            "Event: %s|nValue: %s|nCount: %s",
+            relativeTo.event,
+            tostring(relativeTo.value),
+            relativeTo.count
+        )
     else
         reminderLine.icon.secondaryTooltipText = nil
     end
@@ -929,11 +935,11 @@ BuildTimeline = function(newViewTime)
     local visibleTracks = 0
     local visibleLabels = 0
 
-    for _, spellData in ipairs(timelineData.events) do
-        if spellData.show then
+    for _, eventData in ipairs(timelineData.events) do
+        if eventData.show then
             visibleLabels = visibleLabels + 1
 
-            if trackVisibility[spellData.spellID] then
+            if trackVisibility[eventData.value] then
                 local highlight = trackHighlightPool[visibleTracks + 1]
 
                 if not highlight then
@@ -1324,6 +1330,7 @@ function LRP:InitializeTimeline()
             if LRP.simulation then
                 LRP:StopSimulation()
             end
+
             if dropdown and dropdownText then
                 UIDropDownMenu_SetText(dropdown, dropdownText)
             end

@@ -262,6 +262,10 @@ function LRP:CreateReminderAnchor(anchorType)
         if not dontPosition then
             PositionReminders()
         end
+
+        if WeakAuras and WeakAuras.ScanEvents then
+            WeakAuras.ScanEvents("TIMELINE_REMINDERS_HIDE", id)
+        end
     end
 
     function reminderAnchor:HideAllReminders()

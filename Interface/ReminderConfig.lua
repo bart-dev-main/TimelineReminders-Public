@@ -13,6 +13,15 @@ local encounterID, difficulty, timelineData -- The timeline data for the encount
 -- Along with the encounterID and difficulty, this is used to uniquely identify a reminder
 local reminderID 
 
+local spellEvents = {
+    SPELL_CAST_START = true,
+    SPELL_CAST_SUCESS = true,
+    SPELL_AURA_APPLIED = true,
+    SPELL_AURA_REMOVED = true,
+    UNIT_SPELLCAST_START = true,
+    UNIT_SPELLCAST_SUCCEEDED = true
+}
+
 local reminderData = {
     load = {
         type = "ALL", -- Who this reminder should show for ("ALL", "NAME", "POSITION", "CLASS_SPEC", or "ROLE")
@@ -24,9 +33,9 @@ local reminderData = {
     },
     trigger = {
         -- relativeTo = {
-        --     event = "SPELL_CAST_SUCCESS", -- CLEU event that the reminder is relative to
-        --     spellID = 123456, -- spellID relating to above CLEU event
-        --     count = 1 -- Count of above CLEU/spellID combination that the reminder is relative to
+        --     event = "SPELL_CAST_SUCCESS", -- Event that the reminder is relative to
+        --     value = 123456, -- spellID/npc ID/boss text relating to the above event
+        --     count = 1 -- Count of above event/value combination that the reminder is relative to
         -- },
         time = 0, -- Time relative to pull (or event) when the reminder should finish showing
         duration = 8, -- Number of seconds the reminder shows for
@@ -64,8 +73,6 @@ local defaultReminder = CopyTable(reminderData) -- Used to reset config back to 
 local windowWidth = 470
 local windowHeight = 400
 
-local screenWidth, screenHeight = GetPhysicalScreenSize()
-
 -- Constants for use in dropdowns
 local spellDropdownShouldUpdate = true
 local playerClass, playerClassFile, playerClassID = UnitClass("player")
@@ -89,7 +96,36 @@ end
 
 -- Widgets
 local reminderTypeDropdownInfoTable
-local targetNameEditBox, targetDropdown, relativeToDropdown, timeEditBox, durationSlider, reminderColorPicker, textReminderEditBox, spellReminderEditBoxIcon, spellReminderEditBox, hideOnUseCheckButton, reminderTypeDropdown, ttsTimeSlider, ttsCheckButton, glowNamesEditBox, glowCheckButton, acceptButton, deleteButton, relativeToSpellEditBox, relativeToCountEditBox, relativeToSpellIcon, glowTypeDropdown, glowColorPicker, makeDefaultButton, testButton, glowPreviewFrame, ttsVoiceDropdown
+local targetNameEditBox, targetDropdown, relativeToDropdown, timeEditBox, durationSlider, reminderColorPicker, textReminderEditBox, spellReminderEditBoxIcon, spellReminderEditBox, hideOnUseCheckButton, reminderTypeDropdown, ttsTimeSlider, ttsCheckButton, glowNamesEditBox, glowCheckButton, acceptButton, deleteButton, relativeToValueEditBox, relativeToCountEditBox, relativeToSpellIcon, glowTypeDropdown, glowColorPicker, makeDefaultButton, testButton, glowPreviewFrame, ttsVoiceDropdown
+
+-- On some operating systems, voices becomes available only after the addon loads
+-- We call this function on VOICE_CHAT_TTS_VOICES_UPDATE to account for that
+local function GetVoiceDropdownInfoTable()
+    local ttsVoiceDropdownInfoTable = {}
+    local availableTtsVoices = C_VoiceChat.GetTtsVoices()
+
+    -- If user has no TTS voices installed on their machine, display it
+    if not (availableTtsVoices and next(availableTtsVoices)) then
+        availableTtsVoices = {
+            {
+                voiceID = 0,
+                name = "No TTS voices available"
+            }
+        }
+    end
+
+    for _, voiceInfo in ipairs(availableTtsVoices) do
+        table.insert(
+            ttsVoiceDropdownInfoTable,
+            {
+                text = voiceInfo.name,
+                value = voiceInfo.voiceID
+            }
+        )
+    end
+
+    return ttsVoiceDropdownInfoTable
+end
 
 -- For the currently set timelineData, find the phase that a reminder is relative to
 -- This is used when loading in a reminder to know which phase to select from the dropdown
@@ -101,11 +137,11 @@ local function GetPhaseFromReminder(_reminderData)
     end
 
     local event = relativeTo.event
-    local spellID = relativeTo.spellID
+    local value = relativeTo.value
     local count = relativeTo.count
 
     for phaseCount, phaseInfo in ipairs(timelineData.phases) do
-        if phaseInfo.event == event and phaseInfo.spellID == spellID and phaseInfo.count == count then
+        if phaseInfo.event == event and phaseInfo.value == value and phaseInfo.count == count then
             return phaseCount
         end
     end
@@ -198,6 +234,10 @@ function LRP:LoadReminder(_timelineData, _encounterID, _difficulty, _reminderID)
                 [7] = {
                     text = "UNIT_DIED",
                     value = "UNIT_DIED"
+                },
+                [8] = {
+                    text = "CHAT_MSG_MONSTER_YELL",
+                    value = "CHAT_MSG_MONSTER_YELL"
                 }
             }
         }
@@ -242,11 +282,12 @@ function LRP:LoadReminder(_timelineData, _encounterID, _difficulty, _reminderID)
             SPELL_AURA_REMOVED = 4,
             UNIT_SPELLCAST_START = 5,
             UNIT_SPELLCAST_SUCCEEDED = 6,
-            UNIT_DIED = 7
+            UNIT_DIED = 7,
+            CHAT_MSG_MONSTER_YELL = 8
         }
 
         relativeToDropdown:SetValue({#infoTable, eventIndices[newReminder.trigger.relativeTo.event]})
-        relativeToSpellEditBox:SetText(newReminder.trigger.relativeTo.spellID or "")
+        relativeToValueEditBox:SetText(newReminder.trigger.relativeTo.value or "")
         relativeToCountEditBox:SetText(newReminder.trigger.relativeTo.count or "")
     end
     
@@ -468,7 +509,7 @@ function LRP:InitializeConfig()
 
     LRP.reminderConfig = LRP:CreateWindow("Config", true, true, false)
 
-    LRP.reminderConfig:SetPoint("TOPLEFT", UIParent, "TOPLEFT", (screenWidth - windowWidth) / 2, -(screenHeight - windowHeight) / 2)
+    LRP.reminderConfig:SetPoint("CENTER")
     LRP.reminderConfig:SetSize(windowWidth, windowHeight)
     LRP.reminderConfig:SetFrameStrata("HIGH")
     
@@ -648,69 +689,101 @@ function LRP:InitializeConfig()
     LRP:AddTooltip(targetNameEditBox, "Character that this reminder should show for. Does |cffff0000not|r support multiple entries.")
     
     -- Relative to spell ID edit box (SetPoint happens after relativeToDropdown initialization)
-    relativeToSpellEditBox = LRP:CreateEditBox(
+    relativeToValueEditBox = LRP:CreateEditBox(
         LRP.reminderConfig,
         "Spell ID/npc ID",
-        function(spellID)
-            spellID = tonumber(spellID)
+        function(value)
+            local event = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.event
+            local valueType = event and spellEvents[event] and "spell ID" or event == "UNIT_DIED" and "npc ID" or "text"
 
-            if not spellID then
-                relativeToSpellEditBox:SetText(0)
+            -- Adjust the tooltip based on the value type
+            if valueType then
+                LRP:AddTooltip(relativeToValueEditBox, string.format("The %s corresponding to the event that this reminder is relative to.", valueType))
+            end
 
-                return
+            -- If the event is not CHAT_MSG_MONSTER_YELL, convert it to a number
+            -- It should always be a spell ID or npc ID
+            if event ~= "CHAT_MSG_MONSTER_YELL" then
+                value = tonumber(value)
+
+                if not value then
+                    relativeToValueEditBox:SetText(0)
+    
+                    return
+                end
+
+                if relativeToSpellIcon then
+                    relativeToSpellIcon:SetSpellID(value)
+                end
             end
 
             if reminderData.trigger.relativeTo then
-                reminderData.trigger.relativeTo.spellID = spellID
+                reminderData.trigger.relativeTo.value = value
             end
 
-            if relativeToSpellIcon then
-                relativeToSpellIcon:SetSpellID(spellID)
-            end
+            -- If this type of event requires a spell ID, check if it's valid
+            -- If not, highlight the value edit box
+            if event and value then
+                if spellEvents[event] then
+                    local spellInfo = LRP.GetSpellInfo(value)
 
-            local spellInfo = LRP.GetSpellInfo(spellID) -- Check if this is a valid spell ID
-            local event = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.event
+                    if not spellInfo then
+                        relativeToValueEditBox:ShowHighlight(1, 0, 0)
 
-            if spellInfo and event then
-                -- Check if this event/spellID combination is present in timeline data
-                for _, eventInfo in ipairs(timelineData.events) do
-                    if event == eventInfo.event and spellID == eventInfo.spellID then
-                        relativeToSpellEditBox:HideHighlight()
-
-                        relativeToSpellEditBox.secondaryTooltipText = nil
+                        relativeToValueEditBox.secondaryTooltipText = string.format("|cffff0000Valid %s must be provided for this reminder to show.", valueType)
                         LRP:RefreshTooltip()
-
                         relativeToCountEditBox:Refresh() -- Count edit box highlight depends on this spell ID, refresh it
 
                         return
                     end
                 end
+                
+                -- Check if this event/value combination is present in timeline data
+                for _, eventInfo in ipairs(timelineData.events) do
+                    if event == eventInfo.event and value == eventInfo.value then
+                        -- If we are here, the event/value combination is present in timeline data
+                        -- Hide the highlight and the warning text
+                        relativeToValueEditBox:HideHighlight()
 
-                relativeToSpellEditBox:ShowHighlight(1, 1, 0)
+                        relativeToValueEditBox.secondaryTooltipText = nil
 
-                relativeToSpellEditBox.secondaryTooltipText = "|cffffff00This event/spellID combination is not included in the timeline data. As such, this reminder cannot be displayed on the timeline.|n|nThe reminder may still appear during the encounter if this event occurs!|r"
-                LRP:RefreshTooltip()
-            else
-                relativeToSpellEditBox:ShowHighlight(1, 0, 0)
+                        LRP:RefreshTooltip()
+                        relativeToCountEditBox:Refresh() -- Count edit box highlight depends on this spell ID, refresh it
 
-                relativeToSpellEditBox.secondaryTooltipText = "|cffff0000Valid spell ID must be provided for this reminder to show."
-                LRP:RefreshTooltip()
+                        return
+                    end
+                end
             end
 
+            -- If we are here, the event/value combination is not present in the timeline
+            -- Show a highlight and add some secondary tooltip text explaining why the highlight is there
+            relativeToValueEditBox:ShowHighlight(1, 1, 0)
+
+            relativeToValueEditBox.secondaryTooltipText = string.format(
+                "|cffffff00This event/%s combination is not included in the timeline data. As such, this reminder cannot be displayed on the timeline.|n|nThe reminder may still appear during the encounter if this event occurs!|r",
+                valueType
+            )
+
+            LRP:RefreshTooltip()
             relativeToCountEditBox:Refresh() -- Count edit box highlight depends on this spell ID, refresh it
         end
     )
 
-    relativeToSpellEditBox:SetSize(90, editBoxHeight)
-    relativeToSpellEditBox:SetNumeric(true)
-
-    LRP:AddTooltip(relativeToSpellEditBox, "Spell ID of the event that this reminder is relative to.")
-
     -- Relative to count edit box
     relativeToCountEditBox = LRP:CreateEditBox(
-        relativeToSpellEditBox,
+        relativeToValueEditBox,
         "Count",
         function(count)
+            local event = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.event
+            local valueType = event and spellEvents[event] and "spell ID" or event == "UNIT_DIED" and "npc ID" or "text"
+
+            -- Adjust the tooltip based on the value type
+            if valueType then
+                LRP:AddTooltip(relativeToCountEditBox, string.format("The count of the event/%s combination that this reminder is relative to.", valueType))
+            end
+
+            -- Count should always be numerical, so cast it to a number
+            -- If somehow the count is not numerical, reset it to 1
             count = tonumber(count)
 
             if not count then
@@ -723,29 +796,33 @@ function LRP:InitializeConfig()
                 reminderData.trigger.relativeTo.count = count
             end
 
-            local event = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.event
-            local spellID = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.spellID
-            local spellInfo = spellID and LRP.GetSpellInfo(spellID)
+            local value = reminderData.trigger.relativeTo and reminderData.trigger.relativeTo.value
 
-            -- If the spell ID is invalid, the spell ID edit box will already be highlighted
+            -- If the reminder is relative to a spell, and the spell ID is invalid, the spell ID edit box will already be highlighted
             -- In this case, don't also highlight the count edit box
-            if not spellInfo then
-                relativeToCountEditBox:HideHighlight()
+            if spellEvents[event] then
+                local spellInfo = value and LRP.GetSpellInfo(value)
 
-                relativeToCountEditBox.secondaryTooltipText = nil
-                LRP:RefreshTooltip()
+                if not spellInfo then
+                    relativeToCountEditBox:HideHighlight()
 
-                return
+                    relativeToCountEditBox.secondaryTooltipText = nil
+                    LRP:RefreshTooltip()
+
+                    return
+                end
             end
 
-            if event and spellID then
-                local spellIDFound = false -- Whether the event/spellID combination is valid
+            -- Hide/show a highlight based on whether this event/value/count combination is present in the timeline
+            -- Add a tooltip warning explaning the situation
+            if event and value then
+                local valueFound = false -- Whether the event/value combination is valid
                 local countFound = false -- Whether the count is valid (in case the event is valid)
                 local entryCount = 0
 
                 for _, eventInfo in ipairs(timelineData.events) do
-                    if event == eventInfo.event and spellID == eventInfo.spellID then
-                        spellIDFound = true
+                    if event == eventInfo.event and value == eventInfo.value then
+                        valueFound = true
 
                         if eventInfo.entries[count] then
                             countFound = true
@@ -757,9 +834,9 @@ function LRP:InitializeConfig()
                     end
                 end
 
-                -- If the event/spell ID combination is not found, the spell ID edit box will already be highlighted
+                -- If the event/value combination is not found, the value edit box will already be highlighted
                 -- In this case, don't also highlight the count edit box
-                if spellIDFound then
+                if valueFound then
                     if countFound then
                         relativeToCountEditBox:HideHighlight()
 
@@ -770,7 +847,7 @@ function LRP:InitializeConfig()
                     else
                         relativeToCountEditBox:ShowHighlight(1, 1, 0)
 
-                        relativeToCountEditBox.secondaryTooltipText = string.format("|cffffff00There are only %d occurences of this event/spellID combination on the timeline. As such, this reminder cannot be displayed on the timeline.|n|nThe reminder may still appear during the encounter if this number of events occur!|r", entryCount)
+                        relativeToCountEditBox.secondaryTooltipText = string.format("|cffffff00There are only %d occurences of this event/%s combination on the timeline. As such, this reminder cannot be displayed on the timeline.|n|nThe reminder may still appear during the encounter if this number of events occur!|r", entryCount, valueType)
                         LRP:RefreshTooltip()
 
                         return
@@ -778,6 +855,8 @@ function LRP:InitializeConfig()
                 end
             end
             
+            -- If we are here, the event/value combination is not present in the timeline at all (regardless of the count)
+            -- Hide the highlight/tooltip warning in this case: the value edit box will already be highlighted
             relativeToCountEditBox:HideHighlight()
 
             relativeToCountEditBox.secondaryTooltipText = nil
@@ -786,10 +865,8 @@ function LRP:InitializeConfig()
     )
 
     relativeToCountEditBox:SetSize(50, editBoxHeight)
-    relativeToCountEditBox:SetPoint("LEFT", relativeToSpellEditBox, "RIGHT", spacing, 0)
+    relativeToCountEditBox:SetPoint("LEFT", relativeToValueEditBox, "RIGHT", spacing, 0)
     relativeToCountEditBox:SetNumeric(true)
-
-    LRP:AddTooltip(relativeToCountEditBox, "The count of the event/spell ID combination that this reminder is relative to.")
 
     -- Relative to spell icon
     relativeToSpellIcon = LRP:CreateSpellIcon(relativeToCountEditBox)
@@ -873,6 +950,10 @@ function LRP:InitializeConfig()
                     [7] = {
                         text = "UNIT_DIED",
                         value = "UNIT_DIED"
+                    },
+                    [8] = {
+                        text = "CHAT_MSG_MONSTER_YELL",
+                        value = "CHAT_MSG_MONSTER_YELL"
                     }
                 }
             }
@@ -884,31 +965,53 @@ function LRP:InitializeConfig()
                 end
 
                 reminderData.trigger.relativeTo.event = arg2
-                relativeToSpellEditBox:SetText(reminderData.trigger.relativeTo.spellID or "")
+                relativeToValueEditBox:SetText(reminderData.trigger.relativeTo.value or "")
                 relativeToCountEditBox:SetText(reminderData.trigger.relativeTo.count or "")
 
                 -- Position widgets
-                relativeToSpellEditBox:Show()
+                relativeToValueEditBox:Show()
 
-                timeEditBox:SetPoint("LEFT", relativeToSpellIcon, "RIGHT", spacing, 0)
-                timeEditBox:SetPoint("RIGHT", LRP.reminderConfig, "RIGHT", -spacing, 0)
+                if arg2 == "CHAT_MSG_MONSTER_YELL" then
+                    relativeToSpellIcon:Hide()
 
-                relativeToSpellEditBox:Refresh() -- Spell ID edit box highlight depends on this event, refresh it
+                    timeEditBox:SetPoint("LEFT", relativeToCountEditBox, "RIGHT", spacing, 0)
+                    timeEditBox:SetPoint("RIGHT", LRP.reminderConfig, "RIGHT", -spacing, 0)
+
+                    relativeToValueEditBox:SetSize(90 + spacing + iconSize, editBoxHeight)
+                else
+                    relativeToSpellIcon:Show()
+
+                    timeEditBox:SetPoint("LEFT", relativeToSpellIcon, "RIGHT", spacing, 0)
+                    timeEditBox:SetPoint("RIGHT", LRP.reminderConfig, "RIGHT", -spacing, 0)
+
+                    relativeToValueEditBox:SetSize(90, editBoxHeight)
+                end
+                
+                -- Change edit box title
+                if arg2 == "UNIT_DIED" then
+                    relativeToValueEditBox.title:SetText(string.format("|cFFFFCC00%s|r", "Npc ID"))
+                elseif arg2 == "CHAT_MSG_MONSTER_YELL" then
+                    relativeToValueEditBox.title:SetText(string.format("|cFFFFCC00%s|r", "Text"))
+                else
+                    relativeToValueEditBox.title:SetText(string.format("|cFFFFCC00%s|r", "Spell ID"))
+                end
+
+                relativeToValueEditBox:Refresh() -- Value edit box highlight depends on this event, refresh it
             else -- Relative to a known phase event (or pull)
                 if arg1 == 0 then -- Relative to pull
                     reminderData.trigger.relativeTo = nil
                 else
                     local phaseInfo = timelineData.phases[arg1]
-    
+                    
                     reminderData.trigger.relativeTo = {
                         event = phaseInfo.event,
-                        spellID = phaseInfo.spellID,
+                        value = phaseInfo.value,
                         count = phaseInfo.count
                     }
                 end
 
                 -- Position widgets
-                relativeToSpellEditBox:Hide()
+                relativeToValueEditBox:Hide()
 
                 timeEditBox:ClearAllPoints()
                 timeEditBox:SetWidth(80)
@@ -921,12 +1024,12 @@ function LRP:InitializeConfig()
     UIDropDownMenu_SetWidth(relativeToDropdown, 120)
     LRP:AddTooltip(
         relativeToDropdown,
-        "The phase that the reminder time is relative to." ..
+        "The phase (or event) that the reminder time is relative to." ..
         "|n|ne.g. if phase 2 starts at 1:00, and the time is set to 20, the reminder will finish showing at 1:20." ..
-        "|n|n|cff29ff62This is auto-filled when creating a reminder on the timeline, so you should not have to touch this.|r"
+        "|n|n|cff29ff62This is auto-filled when creating a reminder on the timeline relative to a phase.|r"
     )
 
-    relativeToSpellEditBox:SetPoint("LEFT", relativeToDropdown, "RIGHT", spacing, 0)
+    relativeToValueEditBox:SetPoint("LEFT", relativeToDropdown, "RIGHT", spacing, 0)
 
     -- Reminder color picker
     reminderColorPicker = LRP:CreateColorPicker(
@@ -1199,33 +1302,10 @@ function LRP:InitializeConfig()
     LRP:AddTooltip(ttsTimeSlider, "At what time (in seconds) remaining on the reminder the text-to-speech should play.")
 
     -- TTS voice
-    local ttsVoiceDropdownInfoTable = {}
-    local availableTtsVoices = C_VoiceChat.GetTtsVoices()
-
-    -- If user has no TTS voices installed on their machine, display it
-    if not (availableTtsVoices and next(availableTtsVoices)) then
-        availableTtsVoices = {
-            {
-                voiceID = 0,
-                name = "No TTS voices available"
-            }
-        }
-    end
-
-    for _, voiceInfo in ipairs(availableTtsVoices) do
-        table.insert(
-            ttsVoiceDropdownInfoTable,
-            {
-                text = voiceInfo.name,
-                value = voiceInfo.voiceID
-            }
-        )
-    end
-
     ttsVoiceDropdown = LRP:CreateDropdown(
         ttsTimeSlider,
         "Voice",
-        ttsVoiceDropdownInfoTable,
+        GetVoiceDropdownInfoTable(),
         function(voiceID)
             -- If the user manually selected a new voice, play a preview
             if voiceID ~= reminderData.tts.voice then
@@ -1414,6 +1494,7 @@ function LRP:InitializeConfig()
                 function()
                     LiquidRemindersSaved.settings.defaultReminder = CopyTable(reminderData)
 
+                    LRP:ApplyDefaultSettingsToNote()
                     LRP:BuildReminderLines() -- Tooltips for MRT reminders might change, so rebuild them
                 end
             )
@@ -1456,15 +1537,16 @@ function LRP:InitializeConfig()
     LRP:AddBorder(glowPreviewFrame)
 end
 
-local spellDataFrame = CreateFrame("Frame")
+local eventFrame = CreateFrame("Frame")
 
-spellDataFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
+eventFrame:RegisterEvent("VOICE_CHAT_TTS_VOICES_UPDATE")
+eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
 
 if LRP.isRetail then
-	spellDataFrame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
+	eventFrame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
 end
 
-spellDataFrame:SetScript(
+eventFrame:SetScript(
     "OnEvent",
     function(_, event, ...)
         -- GetSpellBookItemInfo does not return proper spec IDs immediately on login, so we collect data on LOADING_SCREEN_DISABLED
@@ -1472,6 +1554,8 @@ spellDataFrame:SetScript(
             QueueSpellBookUpdate(true)
         elseif event == "LEARNED_SPELL_IN_SKILL_LINE" then
             QueueSpellBookUpdate()
+        elseif event == "VOICE_CHAT_TTS_VOICES_UPDATE" then
+            ttsVoiceDropdown:SetInfoTable(GetVoiceDropdownInfoTable())
         end
     end
 )

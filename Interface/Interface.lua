@@ -1,31 +1,30 @@
 local _, LRP = ...
 
 -- Tooltip
-local tooltip = CreateFrame("GameTooltip", "LRTooltip", UIParent, "GameTooltipTemplate")
-tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+CreateFrame("GameTooltip", "LRTooltip", UIParent, "GameTooltipTemplate")
 
-tooltip:AddFontStrings(
-	tooltip:CreateFontString("$parentTextLeft1", nil, "GameTooltipText"),
-	tooltip:CreateFontString("$parentTextRight1", nil, "GameTooltipText")
+LRP.Tooltip = _G["LRTooltip"]
+LRP.Tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+LRP.Tooltip:AddFontStrings(
+	LRP.Tooltip:CreateFontString("$parentTextLeft1", nil, "GameTooltipText"),
+	LRP.Tooltip:CreateFontString("$parentTextRight1", nil, "GameTooltipText")
 )
 
---tooltip.TextLeft1:SetFontObject(LRFont13)
---tooltip.TextRight1:SetFontObject(LRFont13)
-
-LRP.Tooltip = tooltip
+if LRP.isRetail then
+    LRP.Tooltip.TextLeft1:SetFontObject(LRFont13)
+    LRP.Tooltip.TextRight1:SetFontObject(LRFont13)
+end
 
 -- Main window
 local windowDefaultWidth = 1200
-local windowDefaultHeight = 800 -- Only used for initial positioning as a base value. Height is set depending on timeline data.
-
 local windowMinWidth = 800
 
 function LRP:InitializeInterface()
-    local screenWidth, screenHeight = GetPhysicalScreenSize()
-
     LRP.window = LRP:CreateWindow("Main", true, true, true)
     LRP.window:SetFrameStrata("HIGH")
     LRP.window:SetResizeBounds(windowMinWidth, 0) -- Height is set based on timeine data
+    LRP.window:SetPoint("CENTER")
     LRP.window:Hide()
 
     LRP.window:SetScript("OnHide", function() LRP:StopSimulation() end)
@@ -40,8 +39,6 @@ function LRP:InitializeInterface()
 
         LRP.window:SetWidth(windowWidth)
     end
-    
-    LRP.window:SetPoint("TOPLEFT", UIParent, "TOPLEFT", (screenWidth - windowWidth) / 2, -(screenHeight - windowDefaultHeight) / 2)
     
     -- Settings button
     LRP.window:AddButton(
