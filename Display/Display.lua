@@ -1,5 +1,8 @@
 local _, LRP = ...
 
+local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
+
+local L = LRP.L
 local eventFrame = CreateFrame("Frame")
 
 -- Difficulty ID (payload for ENCOUNTER_START) to internal difficulty ID
@@ -8,14 +11,21 @@ local difficultyIDs
 if LRP.isRetail then
 	difficultyIDs = {
 		[8] = 2,  -- Mythic Keystone (party)
-		[15] = 1, -- Heroic (raid)
+		[14] = 1, -- Normal (raid)
+ 		[15] = 1, -- Heroic (raid)
 		[16] = 2, -- Mythic (raid)
 		[23] = 2, -- Mythic (party)
 	}
 else
 	difficultyIDs = {
-		[14] = 1, -- Normal (raid)
-		[15] = 2, -- Heroic (raid)
+		[3] = 1, -- 10 player raid
+		[4] = 1, -- 25 player raid
+		[5] = 2, -- 10 player raid (heroic)
+		[6] = 2, -- 25 player raid (heroic)
+		[175] = 1, -- 10 player raid
+		[176] = 1, -- 25 player raid
+		[193] = 2, -- 10 player raid (heroic)
+		[194] = 2, -- 25 player raid (heroic)
 	}
 end
 
@@ -79,6 +89,9 @@ end
 -- Hides all active reminders and dequeues all upcoming reminders
 local function CleanUp()
 	eventFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	eventFrame:UnregisterEvent("UNIT_SPELLCAST_START")
+	eventFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+	eventFrame:UnregisterEvent("CHAT_MSG_MONSTER_YELL")
 
 	LRP.anchors.TEXT:HideAllReminders()
 	LRP.anchors.SPELL:HideAllReminders()
@@ -125,6 +138,9 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 	CleanUp() -- Safety precaution
 
 	eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
+	eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+	eventFrame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
 
 	-- These variables are used to save death data
 	encounterStart = GetTime()
@@ -154,16 +170,29 @@ local function OnEncounterStart(encounterID, difficulty, simulationOffset)
 	}
 
 	local addOnReminders = LiquidRemindersSaved.reminders[encounterID] and LiquidRemindersSaved.reminders[encounterID][difficulty] or {}
-	local mrtEncounterReminders = LRP.MRTReminders and LRP.MRTReminders[encounterID] or {}
-	local mrtAllReminders = LRP.MRTReminders and LRP.MRTReminders.ALL or {}
-	local combinedReminders = {addOnReminders, mrtEncounterReminders, mrtAllReminders}
+	local combinedReminders = {addOnReminders} -- Addon reminders are always displayed
+
+	-- MRT note reminders
+	if LRP.MRTReminders then
+		-- Personal note
+		if LiquidRemindersSaved.settings.timeline.personalNoteReminders then
+			table.insert(combinedReminders, LRP.MRTReminders.personal.ALL or {})
+			table.insert(combinedReminders, LRP.MRTReminders.personal[encounterID] or {})
+		end
+
+		-- Public note
+		if LiquidRemindersSaved.settings.timeline.publicNoteReminders then
+			table.insert(combinedReminders, LRP.MRTReminders.public.ALL or {})
+			table.insert(combinedReminders, LRP.MRTReminders.public[encounterID] or {})
+		end
+	end
 
 	-- Fill the reminderEvents table
 	-- This table contains the events that have at least one reminder relative to them
 	-- When events happen during the fight, they are checked against this table and reminders are queued as needed
-	for reminderSource, reminders in ipairs(combinedReminders) do
+	for _, reminders in ipairs(combinedReminders) do
 		for id, reminderData in pairs(reminders) do
-			if reminderSource > 1 or LRP:IsRelevantReminder(reminderData) then
+			if LRP:IsRelevantReminder(reminderData) then
 				local relativeTo = reminderData.trigger.relativeTo
 
 				if relativeTo then
@@ -239,6 +268,11 @@ local function OnEvent(event, value, simulationOffset, simulationEventTime)
 
 	-- For CHAT_MSG_MONSTER_YELL, we match() the values rather than use them as indices directly
 	if event == "CHAT_MSG_MONSTER_YELL" then
+		-- Ragnaros
+		if value:match(L.ragnaros_intermission_end2) or value:match(L.ragnaros_intermission_end3) then
+			value = L.ragnaros_intermission_end1
+		end
+
 		for v in pairs(eventTable) do
 			if v ~= "" then -- Don't match with empty string (in case user forgot to enter something)
 				if value:match(v) then
@@ -247,6 +281,11 @@ local function OnEvent(event, value, simulationOffset, simulationEventTime)
 					break
 				end
 			end
+		end
+	else
+		-- Ragnaros
+		if value == 98952 or value == 98953 then
+			value = 98951
 		end
 	end
 
@@ -340,9 +379,6 @@ end
 
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
-eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
-eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-eventFrame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
 
 eventFrame:SetScript(
     "OnEvent",

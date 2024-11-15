@@ -34,6 +34,7 @@ eventFrame:SetScript(
                 if not LiquidRemindersSaved.reminders then LiquidRemindersSaved.reminders = {} end
                 if not LiquidRemindersSaved.spellBookData then LiquidRemindersSaved.spellBookData = {} end
                 if not LiquidRemindersSaved.deathData then LiquidRemindersSaved.deathData = {} end
+                if not LiquidRemindersSaved.nameColorCache then LiquidRemindersSaved.nameColorCache = {} end
                 if not LiquidRemindersSaved.settings then
                     LiquidRemindersSaved.settings = {
                         frames = {}, -- Size and positioning of frames
@@ -41,7 +42,8 @@ eventFrame:SetScript(
                             selectedInstance = 1,
                             selectedEncounter = 1,
                             showRelevantRemindersOnly = false,
-                            showNoteReminders = true,
+                            publicNoteReminders = true,
+                            personalNoteReminders = true,
                             showDeathLine = true,
                             trackVisibility = {}
                         },

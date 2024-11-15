@@ -52,7 +52,7 @@ local inactiveReminderLinesMRT = {} -- Same as the above, but specifically for M
 
 -- UI elements
 local dropdownMinWidth = 160 -- Label container is sized according to this
-local labelContainer, view, viewMask, timeline, dropdown, relevantRemindersCheckButton, showNoteRemindersCheckButton, showDeathLineCheckButton, unknownEventsLabel, exceedsTimeLabel, simulateButton, simulateLine, warningIcon
+local labelContainer, view, viewMask, timeline, dropdown, relevantRemindersCheckButton, publicNoteRemindersCheckButton, personalNoteRemindersCheckButton, showDeathLineCheckButton, unknownEventsLabel, exceedsTimeLabel, simulateButton, simulateLine, warningIcon
 
 -- Functions
 local BuildTimeline
@@ -68,12 +68,14 @@ local function UpdateReminderLineVisibility()
     for _, reminderLine in pairs(activeReminderLines) do
         if reminderLine.unknownEvent or reminderLine.exceedsTime then
             reminderLine:Hide()
-            reminderLine.icon:Show()
             reminderLine.icon.tex:RemoveMaskTexture(viewMask)
 
             for _, tex in pairs(reminderLine.icon.border) do
                 tex:RemoveMaskTexture(viewMask)
             end
+
+            -- Visibility of the reminderLine.icon is handled in PositionReminderLines()
+            -- This is because we only want to display 10 at most for each category
         else
             local time = reminderLine.time
 
@@ -114,6 +116,8 @@ local function PositionReminderLines()
     for _, reminderLine in ipairs(activeReminderLines) do
         reminderLine:ClearAllPoints()
         reminderLine.icon:ClearAllPoints()
+
+        reminderLine.icon:Show()
     end
 
     -- Position reminders on the timeline (i.e. not those with unknown events, or those that exceed the timeline span)
@@ -149,11 +153,16 @@ local function PositionReminderLines()
     viewMask:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", 0, -reminderLineMargin - #lanesMax * reminderLineIconSize - (#lanesMax - 1) * spacing)
 
     -- Position reminders that exceed the timeline span (and as such cannot be placed on the timeline itself)
+    local maxIconsToShow = 10
     local exceedsTimelineCount = 0
 
     for _, reminderLine in ipairs(activeReminderLines) do
         if reminderLine.exceedsTime then
-            reminderLine.icon:SetPoint("TOPLEFT", exceedsTimeLabel, "BOTTOMLEFT", exceedsTimelineCount * (spacing + reminderLineIconSize), -spacing)
+            if exceedsTimelineCount >= maxIconsToShow then
+                reminderLine.icon:Hide()
+            else
+                reminderLine.icon:SetPoint("TOPLEFT", exceedsTimeLabel, "BOTTOMLEFT", exceedsTimelineCount * (spacing + reminderLineIconSize), -spacing)
+            end
 
             exceedsTimelineCount = exceedsTimelineCount + 1
         end
@@ -166,7 +175,11 @@ local function PositionReminderLines()
 
     for _, reminderLine in ipairs(activeReminderLines) do
         if reminderLine.unknownEvent then
-            reminderLine.icon:SetPoint("TOPLEFT", unknownEventsLabel, "BOTTOMLEFT", unknownEventCount * (spacing + reminderLineIconSize), -spacing)
+            if unknownEventCount >= maxIconsToShow then
+                reminderLine.icon:Hide()
+            else
+                reminderLine.icon:SetPoint("TOPLEFT", unknownEventsLabel, "BOTTOMLEFT", unknownEventCount * (spacing + reminderLineIconSize), -spacing)
+            end
 
             unknownEventCount = unknownEventCount + 1
         end
@@ -180,9 +193,23 @@ local function PositionReminderLines()
         unknownEventsLabel:SetPoint("TOPLEFT", LRP.window.moverFrame, "BOTTOMLEFT", 2 * spacing, -2 * spacing)
     else
         -- If the exceedsTimeLabel is showing, position the unknownEventsLabel based on whether the row of icons below exceedsTimeLabel is larger than the label itself
-        local xOffset = math.max(exceedsTimeLabel:GetStringWidth(), exceedsTimelineCount * (spacing + reminderLineIconSize))
+        local xOffset = math.max(exceedsTimeLabel:GetStringWidth(), math.min(exceedsTimelineCount, maxIconsToShow) * (spacing + reminderLineIconSize))
 
         unknownEventsLabel:SetPoint("TOPLEFT", LRP.window.moverFrame, "BOTTOMLEFT", 2 * spacing + reminderLineIconSize + xOffset, -2 * spacing)
+    end
+
+    -- If the number of entries that exceed the timeline span is more than maxIconsToShow, list the count in the label
+    if exceedsTimelineCount > maxIconsToShow then
+        exceedsTimeLabel:SetText(string.format("|cFFFFCC00Exceeds timeline maximum (%d)|r", exceedsTimelineCount))
+    else
+        exceedsTimeLabel:SetText("|cFFFFCC00Exceeds timeline maximum|r")
+    end
+
+    -- Same for entries that reference unknown events
+    if unknownEventCount > maxIconsToShow then
+        unknownEventsLabel:SetText(string.format("|cFFFFCC00References unknown event (%d)|r", unknownEventCount))
+    else
+        unknownEventsLabel:SetText("|cFFFFCC00References unknown event|r")
     end
 end
 
@@ -409,6 +436,8 @@ local function BuildPhaseLines()
             phaseLine.tex:SetAllPoints(phaseLine)
             phaseLine.tex:SetColorTexture(0.6, 0.6, 0.6)
             phaseLine.tex:AddMaskTexture(viewMask)
+            phaseLine.tex:SetSnapToPixelGrid(false)
+            phaseLine.tex:SetTexelSnappingBias(0)
 
             phaseLine.label = phaseLine.label or phaseLine:CreateFontString(nil, "OVERLAY")
             phaseLine.label:SetFontObject(LRFont16)
@@ -470,6 +499,8 @@ function LRP:BuildDeathLine()
     deathLine.tex:SetAllPoints(deathLine)
     deathLine.tex:SetColorTexture(255/255, 5/255, 40/255)
     deathLine.tex:AddMaskTexture(viewMask)
+    deathLine.tex:SetSnapToPixelGrid(false)
+    deathLine.tex:SetTexelSnappingBias(0)
 end
 
 local function SetViewTime(seconds)
@@ -512,9 +543,135 @@ local function GetRelativeToTime(reminder)
     end
 end
 
+-- Constructs the tooltip text for a reminder
+-- timelineTime is the time that the reminder appears on the timeline
+-- This is included because it can be different from the reminderData time, as that is often relative to a phase starting
+local function ReminderTooltip(reminder, timelineTime)
+    local timeText = LRP:SecondsToClock(timelineTime)
+    local colorString = ConvertRGBtoColorString(reminder.display.color)
+    local targetText, ttsText, soundText, countdownText, glowText
+    local reminderText = ""
+
+    -- Target
+    local targetType = reminder.load.type
+
+    if targetType == "ALL" then
+        targetText = "Everyone"
+    elseif targetType == "NAME" then
+        local name = reminder.load.name
+        local nameColor = LiquidRemindersSaved.nameColorCache[name]
+
+        if not nameColor and UnitExists(name) then
+            local class = UnitClassBase(name)
+
+            if class then
+                nameColor = select(4, GetClassColor(class))
+
+                LiquidRemindersSaved.nameColorCache[name] = nameColor
+            end
+        end
+
+        if nameColor then
+            targetText = string.format("|c%s%s|r", nameColor, name)
+        else
+            targetText = name
+        end
+    elseif targetType == "POSITION" then
+        local position = reminder.load.position
+
+        if position == "MELEE" then
+            targetText = string.format("%s%s", LRP.classIcons["WARRIOR"], "Melee")
+        elseif position == "RANGED" then
+            targetText = string.format("%s%s", LRP.classIcons["HUNTER"], "Ranged")
+        end
+    elseif targetType == "CLASS_SPEC" then
+        local class = reminder.load.class
+        local specIndex = reminder.load.spec
+
+        if class == specIndex then -- This is the case for class reminders
+            local classIcon = LRP.classIcons[class]
+            local coloredClassName = LRP.coloredClasses[class]
+
+            if classIcon and coloredClassName then
+                targetText = string.format("%s %s", LRP:IconString(LRP.classIcons[class]), LRP.coloredClasses[class])
+            end
+        else
+            local classColor = select(4, GetClassColor(class))
+            local _, specName, _, specIcon = GetSpecializationInfoForClassID(LRP.classFileToClassID[class], specIndex)
+            
+            if specName then
+                targetText = string.format("%s |c%s%s|r", LRP:IconString(specIcon), classColor, specName)
+            end
+        end
+    elseif targetType == "GROUP" then
+        local group = reminder.load.group
+
+        if group > 0 then
+            targetText = string.format("Group %d", group)
+        end
+    elseif targetType == "ROLE" then
+        local role = reminder.load.role
+
+        if role == "DAMAGER" then
+            targetText = "|A:groupfinder-icon-role-large-dps:0:0|aDPS"
+        elseif role == "HEALER" then
+            targetText = "|A:groupfinder-icon-role-large-heal:0:0|aHealers"
+        elseif role == "TANK" then
+            targetText = "|A:groupfinder-icon-role-large-tank:0:0|aTanks"
+        end
+    end
+
+    if reminder.tts.enabled then
+        ttsText = "|A:chatframe-button-icon-TTS:0:0|a"
+    end
+
+    if reminder.sound.enabled then
+        soundText = "|A:chatframe-button-icon-voicechat:0:0|a"
+    end
+
+    if reminder.countdown.enabled then
+        countdownText = "|A:auctionhouse-icon-clock:0:0|a"
+    end
+
+    if reminder.glow.enabled then
+        local r = reminder.glow.color.r * 255
+        local g = reminder.glow.color.g * 255
+        local b = reminder.glow.color.b * 255
+
+        glowText = CreateAtlasMarkup("AftLevelup-WhiteIconGlow", 0, 0, 0, 0, r, g, b)
+    end
+
+    if reminder.display.type == "TEXT" then
+        reminderText = LRP:FormatForDisplay(reminder.display.text)
+    else -- Spell reminder
+        local spellInfo = reminder.display.spellID and LRP.GetSpellInfo(reminder.display.spellID)
+
+        if spellInfo then
+            local icon = LRP:IconString(spellInfo.iconID)
+
+            reminderText = string.format("%s %s", icon, spellInfo.name)
+        else
+            reminderText = "|TInterface\\Icons\\INV_MISC_QUESTIONMARK:0:0|t Invalid spell ID"
+        end
+    end
+
+    return string.format(
+        "%s|n%s|n|n%s%s%s%s%s%s%s|r",
+        timeText,
+        targetText,
+        ttsText or "",
+        soundText or "",
+        countdownText or "",
+        glowText or "",
+        (ttsText or soundText or countdownText or glowText) and " " or "",
+        colorString,
+        reminderText
+    )
+end
+
 -- Remember to call PositionReminderLines() afterwards!
-local function CreateReminderLine(reminderID)
-    local reminder = reminderData[reminderID]
+local function CreateReminderLine(id)
+    local reminder = reminderData[id]
     local reminderLine = inactiveReminderLines[#inactiveReminderLines]
     
     if reminderLine then
@@ -559,7 +716,7 @@ local function CreateReminderLine(reminderID)
 
     -- Line
     reminderLine.time = relativeToTime and (relativeToTime + reminder.trigger.time) or 0
-    reminderLine.id = reminderID
+    reminderLine.id = id
     reminderLine.icon.type = reminder.display.type
 
     reminderLine:SetWidth(reminderLineWidth)
@@ -568,6 +725,8 @@ local function CreateReminderLine(reminderID)
     reminderLine.tex:SetAllPoints(reminderLine)
     reminderLine.tex:SetColorTexture(1, 1, 1)
     reminderLine.tex:AddMaskTexture(viewMask)
+    reminderLine.tex:SetSnapToPixelGrid(false)
+    reminderLine.tex:SetTexelSnappingBias(0)
 
     -- Icon
     reminderLine.icon:SetSize(reminderLineIconSize, reminderLineIconSize)
@@ -594,8 +753,6 @@ local function CreateReminderLine(reminderID)
         reminderLine.icon.secondaryTooltipText = nil
     end
 
-    local colorString = ConvertRGBtoColorString(reminder.display.color)
-
     if reminder.display.type == "TEXT" then
         local icon = "Interface\\Addons\\TimelineReminders\\Media\\Textures\\TextPage.tga"
 
@@ -605,13 +762,7 @@ local function CreateReminderLine(reminderID)
         reminderLine.icon.tex:SetTexCoord(0, 1, 0, 1)
         reminderLine.icon.tex:SetVertexColor(0.8, 0.8, 0.8)
 
-        reminderLine.icon.tooltipText = string.format(
-            "(%s) %s%s%s|r",
-            LRP:SecondsToClock(reminderLine.time),
-            reminder.tts.enabled and "|A:chatframe-button-icon-voicechat:0:0|a" or "",
-            colorString,
-            LRP:FormatForDisplay(reminder.display.text)
-        )
+        reminderLine.icon.tooltipText = ReminderTooltip(reminder, reminderLine.time)
 
         reminderLine.icon:HideBorder()
     else -- Spell reminder
@@ -633,13 +784,7 @@ local function CreateReminderLine(reminderID)
         reminderLine.icon.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         reminderLine.icon.tex:SetVertexColor(1, 1, 1)
 
-        reminderLine.icon.tooltipText = string.format(
-            "(%s) %s%s%s|r",
-            LRP:SecondsToClock(reminderLine.time),
-            reminder.tts.enabled and "|A:chatframe-button-icon-voicechat:0:0|a" or "",
-            colorString,
-            name
-        )
+        reminderLine.icon.tooltipText = ReminderTooltip(reminder, reminderLine.time)
 
         reminderLine.icon:ShowBorder()
     end
@@ -647,7 +792,7 @@ local function CreateReminderLine(reminderID)
     reminderLine.icon:SetScript(
         "OnClick",
         function()
-            LRP:LoadReminder(timelineData, selectedEncounterID, selectedDifficulty, reminderID)
+            LRP:LoadReminder(timelineData, selectedEncounterID, selectedDifficulty, id)
             LRP.reminderConfig:Show()
         end
     )
@@ -670,7 +815,6 @@ local function CreateReminderLineMRT(id, reminder)
         reminderLine = CreateFrame("Frame", nil, timeline)
         reminderLine:SetFrameLevel(view:GetFrameLevel() + frameLevels.reminderLine)
 
-        reminderLine.id = id
         reminderLine.icon = CreateFrame("Button", nil, timeline)
         reminderLine.icon:SetFrameLevel(view:GetFrameLevel() + frameLevels.reminderLineIcon) -- Icon might overlap with other reminderLines, so raise its frame level
 
@@ -708,6 +852,7 @@ local function CreateReminderLineMRT(id, reminder)
     end
 
     -- Line
+    reminderLine.id = id
     reminderLine.MRT = true
     reminderLine.time = relativeToTime and (relativeToTime + reminder.trigger.time) or 0
     reminderLine.icon.type = reminder.display.type
@@ -744,8 +889,6 @@ local function CreateReminderLineMRT(id, reminder)
         reminderLine.icon.secondaryTooltipText = nil
     end
 
-    local colorString = ConvertRGBtoColorString(reminder.display.color)
-
     if reminder.display.type == "TEXT" then
         local icon = "Interface\\Addons\\TimelineReminders\\Media\\Textures\\TextPage.tga"
 
@@ -755,13 +898,7 @@ local function CreateReminderLineMRT(id, reminder)
         reminderLine.icon.tex:SetTexCoord(0, 1, 0, 1)
         reminderLine.icon.tex:SetVertexColor(0.8, 1, 1)
 
-        reminderLine.icon.tooltipText = string.format(
-            "(%s) %s%s%s|r",
-            LRP:SecondsToClock(reminderLine.time),
-            colorString,
-            reminder.tts.enabled and "|A:chatframe-button-icon-voicechat:0:0|a" or "",
-            LRP:FormatForDisplay(reminder.display.text)
-        )
+        reminderLine.icon.tooltipText = ReminderTooltip(reminder, reminderLine.time)
 
         reminderLine.icon:HideBorder()
     else -- Spell reminder
@@ -775,13 +912,7 @@ local function CreateReminderLineMRT(id, reminder)
         reminderLine.icon.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         reminderLine.icon.tex:SetVertexColor(1, 1, 1)
         
-        reminderLine.icon.tooltipText = string.format(
-            "(%s) %s%s%s|r",
-            LRP:SecondsToClock(reminderLine.time),
-            colorString,
-            reminder.tts.enabled and "|A:chatframe-button-icon-voicechat:0:0|a" or "",
-            name
-        )
+        reminderLine.icon.tooltipText = ReminderTooltip(reminder, reminderLine.time)
 
         reminderLine.icon:ShowBorder()
     end
@@ -811,45 +942,51 @@ local function DeleteReminderLine(index)
     end
 end
 
-local function DeleteReminderLineByID(reminderID)
-    for i, reminderLine in ipairs(activeReminderLines) do
-        if reminderLine.id == reminderID then
-            DeleteReminderLine(i)
-        end
-    end
-end
-
 function LRP:BuildReminderLines()
     for i in ipairs_reverse(activeReminderLines) do
         DeleteReminderLine(i)
     end
 
+    local showRelevantRemindersOnly = LiquidRemindersSaved.settings.timeline.showRelevantRemindersOnly
+
     -- Regular reminders
-    local reminders = reminderData
-
-    if reminders then
-        local showRelevantRemindersOnly = LiquidRemindersSaved.settings.timeline.showRelevantRemindersOnly
-        
-        for reminderID in pairs(reminders) do
-            local isRelevant = LRP:IsRelevantReminder(reminderData[reminderID])
-
-            if not showRelevantRemindersOnly or isRelevant then
-                CreateReminderLine(reminderID)
+    if reminderData then
+        for id, reminder in pairs(reminderData) do
+            if not showRelevantRemindersOnly or LRP:IsRelevantReminder(reminder) then
+                CreateReminderLine(id)
             end
         end
     end
 
     -- MRT note reminders
-    if LiquidRemindersSaved.settings.timeline.showNoteReminders and LRP.MRTReminders then
-        local combinedReminders = {LRP.MRTReminders.ALL or {}, LRP.MRTReminders[selectedEncounterID] or {}}
+    if LRP.MRTReminders then
+        -- Personal note
+        if LiquidRemindersSaved.settings.timeline.personalNoteReminders then
+            local combinedReminders = {LRP.MRTReminders.personal.ALL or {}, LRP.MRTReminders.personal[selectedEncounterID] or {}}
+    
+            for _, encounterReminders in pairs(combinedReminders) do
+                for id, reminder in pairs(encounterReminders) do
+                    if not showRelevantRemindersOnly or LRP:IsRelevantReminder(reminder) then
+                        CreateReminderLineMRT(id, reminder)
+                    end
+                end
+            end
+        end
 
-        for _, encounterReminders in pairs(combinedReminders) do
-            for id, reminder in pairs(encounterReminders) do
-                CreateReminderLineMRT(id, reminder)
+        -- Public note
+        if LiquidRemindersSaved.settings.timeline.publicNoteReminders then
+            local combinedReminders = {LRP.MRTReminders.public.ALL or {}, LRP.MRTReminders.public[selectedEncounterID] or {}}
+    
+            for _, encounterReminders in pairs(combinedReminders) do
+                for id, reminder in pairs(encounterReminders) do
+                    if not showRelevantRemindersOnly or LRP:IsRelevantReminder(reminder) then
+                        CreateReminderLineMRT(id, reminder)
+                    end
+                end
             end
         end
     end
-
+    
     PositionReminderLines()
 	UpdateReminderLineVisibility()
 end
@@ -865,6 +1002,8 @@ local function BuildSimulateLine()
     simulateLine.tex:SetAllPoints(simulateLine)
     simulateLine.tex:SetColorTexture(0, 1, 0)
     simulateLine.tex:AddMaskTexture(viewMask)
+    simulateLine.tex:SetSnapToPixelGrid(false)
+    simulateLine.tex:SetTexelSnappingBias(0)
 
     simulateLine:SetPoint("TOP", timeline, "TOPLEFT")
     simulateLine:SetPoint("BOTTOM", timeline, "BOTTOMLEFT")
@@ -924,7 +1063,7 @@ BuildTimeline = function(newViewTime)
     if not timelineData then
         timelineData = {phases = {}, events = {}}
 
-        UIDropDownMenu_SetText(dropdown, "No data")
+        dropdown:OverrideText("No data")
     end
 
     if not newViewTime then newViewTime = 0 end
@@ -1172,6 +1311,8 @@ function LRP:InitializeTimeline()
     view.cursorLine.tex = view.cursorLine:CreateTexture(nil, "BACKGROUND")
     view.cursorLine.tex:SetAllPoints(view.cursorLine)
     view.cursorLine.tex:SetColorTexture(1, 1, 1)
+    view.cursorLine.tex:SetSnapToPixelGrid(false)
+    view.cursorLine.tex:SetTexelSnappingBias(0)
 
     -- Cursor time indicator
     view.cursorTime = CreateFrame("Frame", nil, view)
@@ -1332,7 +1473,7 @@ function LRP:InitializeTimeline()
             end
 
             if dropdown and dropdownText then
-                UIDropDownMenu_SetText(dropdown, dropdownText)
+                dropdown:OverrideText(dropdownText)
             end
         end,
         {
@@ -1344,10 +1485,10 @@ function LRP:InitializeTimeline()
         }
     )
 
-	warningIcon:SetPoint("BOTTOMRIGHT", dropdown, "TOPRIGHT", 0, -3)
-    dropdown:SetPoint("BOTTOMLEFT", labelContainer, "TOPLEFT", 0, spacing - 4)
-    dropdown:SetPoint("BOTTOMRIGHT", labelContainer, "TOPRIGHT", -trackHeight - spacing, spacing - 4)
-    UIDropDownMenu_SetWidth(dropdown, dropdownMinWidth - 2 *  (UIDROPDOWNMENU_DEFAULT_WIDTH_PADDING or 25)) -- This is overwritten in BuildTrackLabels() if the track width exceeds it
+	warningIcon:SetPoint("BOTTOMRIGHT", dropdown, "TOPRIGHT")
+    dropdown:SetPoint("BOTTOMLEFT", labelContainer, "TOPLEFT", 0, spacing)
+    dropdown:SetPoint("BOTTOMRIGHT", labelContainer, "TOPRIGHT", -trackHeight - spacing, spacing)
+    dropdown:SetWidth(dropdownMinWidth)
 
     -- If a raid is selected, we set the dropdown text manually
     -- Normally this is done inside of the dropdown's SetValue function, but for the initial load it can't do so because it doesn't exist yet
@@ -1360,7 +1501,7 @@ function LRP:InitializeTimeline()
         local difficulty = LiquidRemindersSaved.settings.timeline.selectedDifficulty
         local text = LRP.timelineDataInfoTable[instanceType].children[instance].children[encounter].children[difficulty].value
 
-        UIDropDownMenu_SetText(dropdown, text)
+        dropdown:OverrideText(text)
     end
 
     -- Relevant reminder toggle
@@ -1380,28 +1521,48 @@ function LRP:InitializeTimeline()
     relevantRemindersCheckButton:SetSize(20, 20)
     relevantRemindersCheckButton.title:SetFontObject(LRFont15)
 
-    LRP:AddTooltip(relevantRemindersCheckButton, "Only show reminders that are relevant to your current character/class/spec")
-    LRP:AddTooltip(relevantRemindersCheckButton.title, "Only show reminders that are relevant to your current character/class/spec")
+    LRP:AddTooltip(relevantRemindersCheckButton, "Only show reminders that are relevant to the character you are currently playing.|n|n|cff29ff62Disabling this option does not make you see other players' reminders during the fight. It only makes them appear on the timeline.|r")
+    LRP:AddTooltip(relevantRemindersCheckButton.title, "Only show reminders that are relevant to the character you are currently playing.|n|n|cff29ff62Disabling this option does not make you see other players' reminders during the fight. It only makes them appear on the timeline.|r")
 
-    -- Show MRT note reminder toggle
-    showNoteRemindersCheckButton = LRP:CreateCheckButton(
+    -- Show public MRT note reminder toggle
+    publicNoteRemindersCheckButton = LRP:CreateCheckButton(
         LRP.window,
-        "Show |cff80ffffMRT|r note reminders",
+        "Public |cff80ffffMRT|r note reminders",
         function(checked)
-            LiquidRemindersSaved.settings.timeline.showNoteReminders = checked
+            LiquidRemindersSaved.settings.timeline.publicNoteReminders = checked
 
             LRP:BuildReminderLines()
         end,
         true
     )
 
-    showNoteRemindersCheckButton:SetPoint("TOPRIGHT", relevantRemindersCheckButton, "BOTTOMRIGHT", 0, - 2 * spacing)
-    showNoteRemindersCheckButton:SetChecked(LiquidRemindersSaved.settings.timeline.showNoteReminders)
-    showNoteRemindersCheckButton:SetSize(20, 20)
-    showNoteRemindersCheckButton.title:SetFontObject(LRFont15)
+    publicNoteRemindersCheckButton:SetPoint("TOPRIGHT", relevantRemindersCheckButton, "BOTTOMRIGHT", 0, - 2 * spacing)
+    publicNoteRemindersCheckButton:SetChecked(LiquidRemindersSaved.settings.timeline.publicNoteReminders)
+    publicNoteRemindersCheckButton:SetSize(20, 20)
+    publicNoteRemindersCheckButton.title:SetFontObject(LRFont15)
 
-    LRP:AddTooltip(showNoteRemindersCheckButton, "Show MRT note reminders on the timeline. These cannot be modified.|n|nThis option will show them regardless of which encounter you are viewing.")
-    LRP:AddTooltip(showNoteRemindersCheckButton.title, "Show MRT note reminders on the timeline. These cannot be modified.|n|nThis option will show them regardless of which encounter you are viewing.")
+    LRP:AddTooltip(publicNoteRemindersCheckButton, "Whether public MRT note reminders should be displayed. These cannot be modified.")
+    LRP:AddTooltip(publicNoteRemindersCheckButton.title, "Whether public MRT note reminders should be displayed. These cannot be modified.")
+
+    -- Show personal MRT note reminder toggle
+    personalNoteRemindersCheckButton = LRP:CreateCheckButton(
+        LRP.window,
+        "Personal |cff80ffffMRT|r note reminders",
+        function(checked)
+            LiquidRemindersSaved.settings.timeline.personalNoteReminders = checked
+
+            LRP:BuildReminderLines()
+        end,
+        true
+    )
+
+    personalNoteRemindersCheckButton:SetPoint("TOPRIGHT", publicNoteRemindersCheckButton, "BOTTOMRIGHT", 0, - 2 * spacing)
+    personalNoteRemindersCheckButton:SetChecked(LiquidRemindersSaved.settings.timeline.personalNoteReminders)
+    personalNoteRemindersCheckButton:SetSize(20, 20)
+    personalNoteRemindersCheckButton.title:SetFontObject(LRFont15)
+
+    LRP:AddTooltip(personalNoteRemindersCheckButton, "Whether personal MRT note reminders should be displayed. These cannot be modified.")
+    LRP:AddTooltip(personalNoteRemindersCheckButton.title, "Whether personal MRT note reminders should be displayed. These cannot be modified.")
 
     -- Show death lines toggle
     showDeathLineCheckButton = LRP:CreateCheckButton(
@@ -1415,7 +1576,7 @@ function LRP:InitializeTimeline()
         true
     )
 
-    showDeathLineCheckButton:SetPoint("TOPRIGHT", showNoteRemindersCheckButton, "BOTTOMRIGHT", 0, - 2 * spacing)
+    showDeathLineCheckButton:SetPoint("TOPRIGHT", personalNoteRemindersCheckButton, "BOTTOMRIGHT", 0, - 2 * spacing)
     showDeathLineCheckButton:SetChecked(LiquidRemindersSaved.settings.timeline.showDeathLine)
     showDeathLineCheckButton:SetSize(20, 20)
     showDeathLineCheckButton.title:SetFontObject(LRFont15)

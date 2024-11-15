@@ -12,6 +12,7 @@ LRFont.xml
 
 Compatibility.lua
 GlobalSettings.lua
+Locales.lua
 Modernize.lua
 Utility.lua
 TextFormatter.lua

@@ -1,7 +1,7 @@
 local _, LRP = ...
 
 LRP.gs = {
-    debug = true, -- Debug mode adds some additional features
+    debug = false, -- Debug mode adds some additional features
     visual = {
         font = "Interface\\Addons\\TimelineReminders\\Media\\Fonts\\PTSansNarrow.ttf",
         fontFlags = "",

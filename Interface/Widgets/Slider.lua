@@ -9,7 +9,7 @@ function LRP:CreateSlider(parent, title, min, max, OnValueChanged)
     slider:SetScript("OnEnter", function(_self) _self.OnEnter() end)
     slider:SetScript("OnLeave", function(_self) _self.OnLeave() end)
 
-    slider:SetSize(128, 20)
+    slider:SetSize(120, 20)
     slider:SetMinMaxValues(min, max)
     slider:SetValue(math.floor(max / 2))
     slider:SetValueStep(1)

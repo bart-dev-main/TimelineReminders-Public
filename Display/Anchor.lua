@@ -63,6 +63,8 @@ function LRP:CreateReminderAnchor(anchorType)
 
     local activeGlows = {}
     local queuedTTS = {}
+    local queuedSounds = {}
+    local queuedCountdowns = {}
     local inactiveReminders = {}
     local activeReminders = {}
     local hideOnUseReminders = {} -- Spell reminders that should be hidden on use. Key is a spell ID, value is a table of reminder IDs.
@@ -146,11 +148,13 @@ function LRP:CreateReminderAnchor(anchorType)
 
         local triggerTime = reminderData.trigger.time - simulationOffset -- Time after pull (or some event) that the reminder should finish showing
         local duration = math.min(triggerTime, reminderData.trigger.duration) -- Total duration that the reminder shows for
-        local ttsTime = reminderData.tts.time -- Number of seconds remaining on the reminder when the TTS should play
-        local queueTime = math.max(0, duration - ttsTime)
+        local playTime = reminderData.tts.time -- Number of seconds remaining on the reminder when the TTS should play
+        local queueTime = math.max(0, duration - playTime)
         local text
 
-        if reminderData.display.type == "SPELL" then
+        if reminderData.tts.alias then
+            text = reminderData.tts.alias
+        elseif reminderData.display.type == "SPELL" then
             local spellInfo = LRP.GetSpellInfo(reminderData.display.spellID)
 
             text = spellInfo.name
@@ -179,6 +183,68 @@ function LRP:CreateReminderAnchor(anchorType)
             queuedTTS[id]:Cancel()
 
             queuedTTS[id] = nil
+        end
+    end
+
+    local function QueueSound(id, reminderData, simulationOffset)
+        if not reminderData.sound.enabled then return end
+
+        local triggerTime = reminderData.trigger.time - simulationOffset -- Time after pull (or some event) that the reminder should finish showing
+        local duration = math.min(triggerTime, reminderData.trigger.duration) -- Total duration that the reminder shows for
+        local playTime = reminderData.sound.time -- Number of seconds remaining on the reminder when the sound should play
+        local queueTime = math.max(0, duration - playTime)
+        local soundFile = reminderData.sound.file
+
+        queuedSounds[id] = C_Timer.NewTimer(
+            queueTime,
+            function()
+                PlaySoundFile(soundFile, "MASTER")
+
+                queuedSounds[id] = nil
+            end
+        )
+    end
+
+    local function DequeueSound(id)
+        if queuedSounds[id] then
+            queuedSounds[id]:Cancel()
+
+            queuedSounds[id] = nil
+        end
+    end
+
+    local function QueueCountdown(id, reminderData, simulationOffset)
+        if not reminderData.countdown.enabled then return end
+
+        local voice = reminderData.countdown.voice
+        local triggerTime = reminderData.trigger.time - simulationOffset -- Time after pull (or some event) that the reminder should finish showing
+        local duration = math.min(triggerTime, reminderData.trigger.duration) -- Total duration that the reminder shows for
+        local playTime = math.min(math.floor(duration), reminderData.countdown.start) -- Number of seconds remaining on the reminder when the countdown should start
+        local queueTime = duration - playTime
+
+        queuedCountdowns[id] = {}
+
+        for i = 0, playTime - 1 do
+            queuedCountdowns[id][i] = C_Timer.NewTimer(
+                queueTime + i,
+                function()
+                    LRP:PlayCountdown(playTime - i, voice)
+
+                    if queuedCountdowns[id] then
+                        queuedCountdowns[id][i] = nil
+                    end
+                end
+            )
+        end
+    end
+
+    local function DequeueCountdown(id)
+        if queuedCountdowns[id] then
+            for _, timer in pairs(queuedCountdowns[id]) do
+                timer:Cancel()
+            end
+            
+            queuedCountdowns[id] = nil
         end
     end
 
@@ -234,7 +300,7 @@ function LRP:CreateReminderAnchor(anchorType)
         end
     end
 
-    function reminderAnchor:HideReminder(id, dequeueTTS, dontPosition)
+    function reminderAnchor:HideReminder(id, dequeueSounds, dontPosition)
         local reminder = activeReminders[id]
 
         if not reminder then return end
@@ -246,10 +312,12 @@ function LRP:CreateReminderAnchor(anchorType)
 
         HideGlow(id)
 
-        -- If TTS should be dequeued (typically when reminders are hidden as a result of the encounter being over), do so
-        -- When a reminder is hidden because it ran out, the TTS is not dequeued as it cleans itself up when it runs
-        if dequeueTTS then
+        -- If sound/TTS should be dequeued (typically when reminders are hidden as a result of the encounter being over), do so
+        -- When a reminder is hidden because it ran out, the sound/TTS is not dequeued as it cleans itself up when it runs
+        if dequeueSounds then
             DequeueTTS(id)
+            DequeueSound(id)
+            DequeueCountdown(id)
         end
 
         -- If this reminder had hideOnUse set, remove its entry from the hideOnUse table
@@ -327,6 +395,8 @@ function LRP:CreateReminderAnchor(anchorType)
 
         ShowGlow(id, reminderData)
         QueueTTS(id, reminderData, simulationOffset)
+        QueueSound(id, reminderData, simulationOffset)
+        QueueCountdown(id, reminderData, simulationOffset)
 
         PositionReminders()
     end
@@ -618,6 +688,12 @@ function LRP:CreateReminderAnchor(anchorType)
                 tts = {
                     enabled = false
                 },
+                sound = {
+                    enabled = false
+                },
+                countdown = {
+                    enabled = false
+                },
                 glow = {
                     enabled = false
                 }
@@ -676,8 +752,6 @@ function LRP:CreateReminderAnchor(anchorType)
         defaultValue
     )
 
-    UIDropDownMenu_SetWidth(fontDropdown, 80)
-
     PositionButtons = function()
         local growDirection = LiquidRemindersSaved.settings.reminderTypes[anchorType].grow
         
@@ -699,14 +773,14 @@ function LRP:CreateReminderAnchor(anchorType)
             rightAlignButton:SetPoint("TOPRIGHT", reminderAnchor, "BOTTOMRIGHT", 0, -2)
 
             if anchorType == "TEXT" then
-                centerAlignButton:SetPoint("TOP", reminderAnchor, "BOTTOM", 0, -2)
-                fontDropdown:SetPoint("TOP", centerAlignButton, "BOTTOM", 0, -2)
+                centerAlignButton:SetPoint("TOP", reminderAnchor, "BOTTOM", 0, -4)
+                fontDropdown:SetPoint("TOP", centerAlignButton, "BOTTOM", 0, -4)
             end
 
             if anchorType == "SPELL" then
                 showAsTextCheckButton:SetPoint("TOP", reminderAnchor, "BOTTOM", -0.5 * showAsTextCheckButton.title:GetStringWidth() - 8, -4)
                 showIconsOnlyCheckButton:SetPoint("TOP", showAsTextCheckButton, "BOTTOM", 0, -4)
-                fontDropdown:SetPoint("TOPLEFT", showIconsOnlyCheckButton, "BOTTOMLEFT")
+                fontDropdown:SetPoint("TOPLEFT", showIconsOnlyCheckButton, "BOTTOMLEFT", 0, -4)
             end
         else
             leftAlignButton:SetPoint("BOTTOMLEFT", reminderAnchor, "TOPLEFT", 0, 2)
@@ -720,7 +794,7 @@ function LRP:CreateReminderAnchor(anchorType)
             if anchorType == "SPELL" then
                 showAsTextCheckButton:SetPoint("BOTTOM", reminderAnchor, "TOP", -0.5 * showAsTextCheckButton.title:GetStringWidth() - 8, 4)
                 showIconsOnlyCheckButton:SetPoint("BOTTOM", showAsTextCheckButton, "TOP", 0, 4)
-                fontDropdown:SetPoint("BOTTOMLEFT", showIconsOnlyCheckButton, "TOPLEFT")
+                fontDropdown:SetPoint("BOTTOMLEFT", showIconsOnlyCheckButton, "TOPLEFT", 0, 4)
             end
         end
     end

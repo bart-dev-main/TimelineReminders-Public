@@ -1,6 +1,6 @@
 local _, LRP = ...
 
-local version = 7
+local version = 10
 
 function LRP:Modernize()
     local internalVersion = LiquidRemindersSaved.internalVersion or 0
@@ -77,6 +77,70 @@ function LRP:Modernize()
                 end
             end
         end
+    end
+
+    -- Sounds got introduced to reminders
+    if internalVersion < 8 then
+        for _, difficultyReminders in pairs(LiquidRemindersSaved.reminders) do
+            for _, encounterReminders in pairs(difficultyReminders) do
+                for _, reminderData in pairs(encounterReminders) do
+                    if not reminderData.sound then
+                        reminderData.sound = {
+                            enabled = false,
+                            time = 0,
+                            file = "Interface\\Addons\\TimelineReminders\\Media\\Sounds\\TR_Beep.mp3"
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    if internalVersion < 9 then
+        if LiquidRemindersSaved.settings.defaultReminder and not LiquidRemindersSaved.settings.defaultReminder.sound then
+            LiquidRemindersSaved.settings.defaultReminder.sound = {
+                enabled = false,
+                time = 0,
+                file = "Interface\\Addons\\TimelineReminders\\Media\\Sounds\\TR_Beep.mp3"
+            }
+        end
+    end
+
+    -- Countdown got introduced to reminders
+    if internalVersion < 10 then
+        for _, difficultyReminders in pairs(LiquidRemindersSaved.reminders) do
+            for _, encounterReminders in pairs(difficultyReminders) do
+                for _, reminderData in pairs(encounterReminders) do
+                    if not reminderData.countdown then
+                        reminderData.countdown = {
+                            enabled = false,
+                            start = 3,
+                            voice = "Sara"
+                        }
+                    end
+                end
+            end
+        end
+
+        if LiquidRemindersSaved.settings.defaultReminder and not LiquidRemindersSaved.settings.defaultReminder.countdown then
+            LiquidRemindersSaved.settings.defaultReminder.countdown = {
+                enabled = false,
+                start = 3,
+                voice = "Sara"
+            }
+        end
+    end
+
+    -- Public/personal MRT note toggle now shows/hides them in-fight as well (rather than just on the timeline)
+    if internalVersion < 11 then
+        if LiquidRemindersSaved.settings.timeline.showNoteReminders ~= nil then
+            LiquidRemindersSaved.settings.timeline.personalNoteReminders = true
+            LiquidRemindersSaved.settings.timeline.publicNoteReminders = true
+
+            LiquidRemindersSaved.settings.timeline.showNoteReminders = nil
+        end
+
+        
     end
 
     LiquidRemindersSaved.internalVersion = version

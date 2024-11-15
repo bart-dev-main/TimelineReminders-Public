@@ -2,8 +2,6 @@ local _, LRP = ...
 
 local LS = LibStub("LibSpecialization")
 
-local playerClass, playerGroup, playerRole, playerPosition
-
 local initialized = false
 local updateQueued = false
 
@@ -66,40 +64,52 @@ local function ParseTrigger(triggerText)
     end
 end
 
--- Returns whether the reminder is relevant for the player (boolean)
+-- Outputs a load info table
 local function ParseLoad(loadText)
     if not loadText then return end
 
     loadText = loadText:match("||c%x%x%x%x%x%x%x%x(.-)||r") or loadText -- Remove colors (if any)
 
     if loadText:match("{everyone}") then
-        return true
+        return {
+            type = "ALL"
+        }
     else
         local loadType, loadTarget = loadText:match("(.-):(.+)")
 
         if loadType and loadTarget then
+            loadType = loadType:upper()
             loadTarget = loadTarget:upper()
 
-            if loadType == "class" and loadTarget == playerClass then
-                return true
-            elseif loadType == "group" and tonumber(loadTarget) == playerGroup then
-                return true
-            elseif loadType == "role" and loadTarget == playerRole then
-                return true
-            elseif loadType == "type" and loadTarget == playerPosition then
-                return true
+            if loadType == "CLASS" then
+                return {
+                    type = "CLASS_SPEC",
+                    class = loadTarget,
+                    spec = loadTarget
+                }
+            elseif loadType == "GROUP" then
+                return {
+                    type = "GROUP",
+                    group = tonumber(loadTarget) or 0
+                }
+            elseif loadType == "ROLE" then
+                return {
+                    type = "ROLE",
+                    role = loadTarget
+                }
+            elseif loadType == "TYPE" then
+                return {
+                    type = "POSITION",
+                    position = loadTarget
+                }
             end
         else
-            local playerName = UnitName("player")
-            local playerNickname = LiquidAPI and LiquidAPI:GetName("player")
-
-            if loadText == playerName or loadText == playerNickname then
-                return true
-            end
+            return {
+                type = "NAME",
+                name = loadText
+            }
         end
     end
-
-    return false
 end
 
 -- Returns a display table with color set to white (color is not supported for note reminders)
@@ -191,20 +201,22 @@ local function ParseLine(line)
     if not trigger then return reminders end
 
     for reminder in reminderText:gmatch("(.-)%s%s") do
-        local loadText, displayText, glowText, isRelevant
+        local loadText, displayText, glowText, load
 
         -- First test if the line is formatted like Llorgs output (no load text, just a single display text)
         displayText = strtrim(reminder):match("^{spell:%d+}$")
 
         if displayText then
-            isRelevant = true
+            load = {
+                type = "ALL"
+            }
         else -- If it's not formatted like Llorgs, attempt to match Viserio note output
             loadText, displayText, glowText = reminder:match("(.-)%s({.+})(.*)")
 
-            isRelevant = ParseLoad(loadText)
+            load = ParseLoad(loadText)
         end
 
-        if isRelevant then
+        if load then
             if glowText then
                 glowText = glowText:match("%s?@(.+)")
             end
@@ -215,9 +227,16 @@ local function ParseLine(line)
                 local glow = ParseGlow(glowText)
 
                 local reminderData = {
+                    load = load,
                     trigger = trigger,
                     display = display,
                     glow = glow,
+                    sound = {
+                        enabled = false
+                    },
+                    countdown = {
+                        enabled = false
+                    },
                     tts = {
                         enabled = false
                     }
@@ -237,21 +256,34 @@ function LRP:ApplyDefaultSettingsToNote()
     if not defaultReminder then return end
     if not LRP.MRTReminders then return end
 
-    for _, encounterReminders in pairs(LRP.MRTReminders) do
-        for _, reminderData in pairs(encounterReminders) do
-            -- Trigger
-            reminderData.trigger.duration = defaultReminder.trigger.duration
-            reminderData.trigger.hideOnUse = defaultReminder.trigger.hideOnUse
-    
-            -- Display
-            reminderData.display.color = defaultReminder.display.color
-    
-            -- Glow
-            reminderData.glow.type = defaultReminder.glow.type
-            reminderData.glow.color = defaultReminder.glow.color
-    
-            -- TTS
-            reminderData.tts = defaultReminder.tts
+    for _, reminderTypeTable in pairs(LRP.MRTReminders) do -- Personal/public
+        for _, encounterTypeTable in pairs(reminderTypeTable) do -- Encounter/all
+            for _, reminderData in pairs(encounterTypeTable) do
+                -- Only apply is to relevant reminders
+                -- Don't give the impression that reminders made for others use our default settings
+                -- (they use the receiver's default settings, which we do not have access to)
+                if LRP:IsRelevantReminder(reminderData) then
+                    -- Trigger
+                    reminderData.trigger.duration = defaultReminder.trigger.duration
+                    reminderData.trigger.hideOnUse = defaultReminder.trigger.hideOnUse
+            
+                    -- Display
+                    reminderData.display.color = defaultReminder.display.color
+            
+                    -- Glow
+                    reminderData.glow.type = defaultReminder.glow.type
+                    reminderData.glow.color = defaultReminder.glow.color
+            
+                    -- TTS
+                    reminderData.tts = defaultReminder.tts
+
+                    -- Sound
+                    reminderData.sound = defaultReminder.sound
+
+                    -- Countdown
+                    reminderData.countdown = defaultReminder.countdown
+                end
+            end
         end
     end
 end
@@ -260,21 +292,21 @@ end
 -- Populates LRP.MRTReminders
 local function ParseNote()
     local encounterID = "ALL"
-    local mrtReminderArray = {} -- This gets turned into a hash table later, because we need string keys
 
-    LRP.MRTReminders = {}
+    LRP.MRTReminders = {personal = {}, public = {}}
     updateQueued = false
 
     if not VMRT then return end
     if not VMRT.Note then return end
-    if not VMRT.Note.Text1 then return end
-    if type(VMRT.Note.Text1) ~= "string" then return end
 
     local notes = {
-        VMRT.Note.Text1, VMRT.Note.SelfText
+        personal = VMRT.Note.SelfText,
+        public = VMRT.Note.Text1
     }
 
-    for _, note in ipairs(notes) do
+    for noteType, note in pairs(notes) do
+        local reminderArray = {}
+
         for line in note:gmatch("[^\r\n]+") do
             local newEncounterID = tonumber(line:match("^{[Ee]:(%d+)}$"))
 
@@ -284,25 +316,27 @@ local function ParseNote()
                 encounterID = "ALL"
             end
 
-            if not mrtReminderArray[encounterID] then
-                mrtReminderArray[encounterID] = {}
-            end
-
             local reminders = ParseLine(line)
-    
-            tAppendAll(mrtReminderArray[encounterID], reminders)
+
+            if next(reminders) then
+                if not reminderArray[encounterID] then
+                    reminderArray[encounterID] = {}
+                end
+
+                tAppendAll(reminderArray[encounterID], reminders)
+            end
+        end
+
+        -- For comparison against reminders we set ourselves (those always have string keys)
+        for encounter, reminders in pairs(reminderArray) do
+            LRP.MRTReminders[noteType][encounter] = {}
+
+            for i, reminder in ipairs(reminders) do
+                LRP.MRTReminders[noteType][encounter][string.format("%s-%d", tostring(encounter), i)] = reminder
+            end
         end
     end
 
-    -- For comparison against reminders we set ourselves (those always have string keys)
-    for encounter, reminders in pairs(mrtReminderArray) do
-        LRP.MRTReminders[encounter] = {}
-
-        for i, reminder in ipairs(reminders) do
-            LRP.MRTReminders[encounter][string.format("%s-%d", tostring(encounter), i)] = reminder
-        end
-    end
-    
     LRP:ApplyDefaultSettingsToNote()
 end
 
@@ -331,37 +365,16 @@ function LRP:InitializeNoteInterpreter()
     end
 end
 
--- Caches player info like class, spec, raid group, etc.
--- This is used to compare against the [load] part of reminders, to determine if they are relevant for us
-local function UpdatePlayerInfo()
-    playerClass = UnitClassBase("player")
-
-    local _, role, position = LS:MySpecialization()
-
-    if role and position then
-        playerRole = role
-        playerPosition = position
-    end
-
-    playerGroup = UnitInRaid("player") and GetRaidRosterInfo(UnitInRaid("player")) or 1
-end
-
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
-eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-
 eventFrame:SetScript(
     "OnEvent",
-    function(_, event, ...)
+    function(_, event)
         if event == "LOADING_SCREEN_DISABLED" then
-            UpdatePlayerInfo()
             ParseNote()
 
             LRP:BuildReminderLines()
-        elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "GROUP_ROSTER_UPDATE" then
-            UpdatePlayerInfo()
         end
     end
 )

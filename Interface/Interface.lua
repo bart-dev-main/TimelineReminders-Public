@@ -39,6 +39,68 @@ function LRP:InitializeInterface()
 
         LRP.window:SetWidth(windowWidth)
     end
+
+    -- Discord button
+    local discordButton = CreateFrame("Button", nil, LRP.window)
+
+    discordButton:SetSize(24, 24)
+    discordButton:SetPoint("BOTTOMLEFT", LRP.window, "BOTTOMLEFT", 10, 6)
+    discordButton:SetHighlightTexture("Interface\\AddOns\\TimelineReminders\\Media\\Textures\\DiscordHighlight.tga", "ADD")
+
+    discordButton.tex = discordButton:CreateTexture(nil, "BACKGROUND")
+    discordButton.tex:SetTexture("Interface\\AddOns\\TimelineReminders\\Media\\Textures\\Discord.tga")
+    discordButton.tex:SetAllPoints()
+
+    local discordEditBox = LRP:CreateEditBox(
+        discordButton,
+        "",
+        function() end
+    )
+
+    discordEditBox:SetSize(150, 20)
+    discordEditBox:SetPoint("LEFT", discordButton, "RIGHT", 8, 0)
+    discordEditBox:SetText("discord.gg/wFt6h3qpP6")
+    discordEditBox:Hide()
+    discordEditBox:RegisterEvent("GLOBAL_MOUSE_DOWN")
+
+    discordEditBox:SetScript(
+        "OnCursorChanged",
+        function()
+            discordEditBox:HighlightText()
+        end
+    )
+
+    discordEditBox:SetScript(
+        "OnTextChanged",
+        function()
+            discordEditBox:SetText("discord.gg/wFt6h3qpP6")
+            discordEditBox:HighlightText()
+        end
+    )
+
+    discordEditBox:SetScript(
+        "OnEvent",
+        function()
+            if not (discordEditBox:IsMouseOver() or discordButton:IsMouseOver()) then
+                discordEditBox:Hide()
+            end
+        end
+    )
+
+    discordButton:SetScript(
+        "OnClick",
+        function()
+            if discordEditBox:IsShown() then
+                discordEditBox:Hide()
+            else
+                discordEditBox:Show()
+                discordEditBox:HighlightText()
+                discordEditBox:SetFocus()
+            end
+        end
+    )
+
+    LRP:AddTooltip(discordButton, "Join the Discord to receive updates about new features")
     
     -- Settings button
     LRP.window:AddButton(
@@ -55,8 +117,8 @@ function LRP:InitializeInterface()
     local timeline = LRP.timeline
 
     timeline:SetParent(LRP.window)
-    timeline:SetPoint("LEFT", LRP.window, "LEFT", 16, 0)
-    timeline:SetPoint("RIGHT", LRP.window, "RIGHT", -16, 0)
+    timeline:SetPoint("LEFT", LRP.window, "LEFT", 16, -20)
+    timeline:SetPoint("RIGHT", LRP.window, "RIGHT", -16, -20)
 
     -- Reminder config
     LRP:InitializeConfig()

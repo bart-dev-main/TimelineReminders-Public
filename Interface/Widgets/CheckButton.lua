@@ -47,6 +47,7 @@ function LRP:CreateCheckButton(parent, title, OnValueChanged, labelLeft)
     checkButton.checkmark = checkButton:CreateTexture(nil, "OVERLAY")
     checkButton.checkmark:SetAllPoints()
     checkButton.checkmark:SetAtlas("common-icon-checkmark-yellow")
+    checkButton.checkmark:Hide()
 
     function checkButton:SetChecked(checked)
         isChecked = checked

@@ -3,6 +3,10 @@ local _, LRP = ...
 local LCG = LibStub("LibCustomGlow-1.0")
 local LS = LibStub("LibSpecialization")
 
+local playerName = UnitName("player")
+local playerNickname = playerName
+local playerClass, playerGroup, playerRole, playerPosition, playerSpecIndex
+
 local bytetoB64 = {
     [0]="a","b","c","d","e","f","g","h",
     "i","j","k","l","m","n","o","p",
@@ -13,6 +17,26 @@ local bytetoB64 = {
     "W","X","Y","Z","0","1","2","3",
     "4","5","6","7","8","9","(",")"
 }
+
+-- For use in config dropdowns and reminder tooltips
+LRP.coloredClasses = {}
+LRP.classIcons = {}
+LRP.classFileToClassID = {}
+
+for classID = 1, GetNumClasses() do
+    local className, classFile = GetClassInfo(classID)
+    local colorStr = RAID_CLASS_COLORS[classFile].colorStr
+
+    LRP.coloredClasses[classFile] = string.format("|c%s%s|r", colorStr, className)
+    LRP.classFileToClassID[classFile] = classID
+
+    -- For some reason the regular class icon file is missing for cata
+    if LRP.isCata and classFile == "DEATHKNIGHT" then
+        LRP.classIcons[classFile] = "interface\\icons\\spell_deathknight_classicon.blp"
+    else
+        LRP.classIcons[classFile] = string.format("interface\\icons\\classicon_%s.blp", classFile:lower())
+    end
+end
 
 -- Generates a unique random 11 digit number in base64
 -- Taken from WeakAuras
@@ -159,8 +183,27 @@ function LRP:IconString(icon)
     end
 end
 
+-- Caches player info like class, spec, raid group, etc.
+-- This is used to compare against the [load] part of reminders, to determine if they are relevant for us
+local function UpdatePlayerInfo()
+    playerClass = UnitClassBase("player")
+    playerSpecIndex = LRP.isRetail and GetSpecialization() or GetPrimaryTalentTree and GetPrimaryTalentTree()
+    playerNickname = LiquidAPI and LiquidAPI:GetName("player") or playerName
+
+    local _, role, position = LS:MySpecialization()
+
+    if role and position then
+        playerRole = role
+        playerPosition = position
+    end
+
+    playerGroup = (UnitInRaid("player") and GetRaidRosterInfo(UnitInRaid("player")) or 1)
+end
+
 -- Evaluates if a reminder should show for the current player character (based on name, class, spec, role)
 function LRP:IsRelevantReminder(reminderData)
+    if not playerClass then UpdatePlayerInfo() end
+    
     local reminderType = reminderData.load.type
 
     if reminderType == "ALL" then
@@ -168,37 +211,35 @@ function LRP:IsRelevantReminder(reminderData)
     end
 
     if reminderType == "NAME" then
-        return reminderData.load.name == UnitName("player")
+        return reminderData.load.name == playerName or reminderData.load.name == playerNickname
     end
 
     if reminderType == "ROLE" then
-        local _, role = LS:MySpecialization()
-
-        return reminderData.load.role == role
+        return reminderData.load.role == playerRole
     end
 
     if reminderType == "POSITION" then
-        local _, _, position = LS:MySpecialization()
-
-        return reminderData.load.position == position
+        return reminderData.display.spellID == playerPosition
     end
 
     if reminderType == "CLASS_SPEC" then
-        local class = UnitClassBase("player")
-
-        if class == reminderData.load.class then
+        if playerClass == reminderData.load.class then
             local specIndex = reminderData.load.spec
 
             -- Class reminder (specIndex is set to class base name)
-            if specIndex == class then
+            if specIndex == reminderData.load.class  then
                 return true
             end
 
             -- Spec reminder
-            if specIndex == (LRP.isRetail and GetSpecialization() or GetPrimaryTalentTree and GetPrimaryTalentTree()) then
+            if specIndex == playerSpecIndex then
                 return true
             end
         end
+    end
+
+    if reminderType == "GROUP" then
+        return reminderData.load.group == playerGroup
     end
 
     return false
@@ -279,18 +320,26 @@ function LRP:AddBorder(parent, thickness, horizontalOffset, verticalOffset)
     parent.border.top:SetHeight(thickness)
     parent.border.top:SetPoint("TOPLEFT", parent, "TOPLEFT", -horizontalOffset, verticalOffset)
     parent.border.top:SetPoint("TOPRIGHT", parent, "TOPRIGHT", horizontalOffset, verticalOffset)
+    parent.border.top:SetSnapToPixelGrid(false)
+    parent.border.top:SetTexelSnappingBias(0)
 
     parent.border.bottom:SetHeight(thickness)
     parent.border.bottom:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -horizontalOffset, -verticalOffset)
     parent.border.bottom:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", horizontalOffset, -verticalOffset)
+    parent.border.bottom:SetSnapToPixelGrid(false)
+    parent.border.bottom:SetTexelSnappingBias(0)
 
     parent.border.left:SetWidth(thickness)
     parent.border.left:SetPoint("TOPLEFT", parent, "TOPLEFT", -horizontalOffset, verticalOffset)
     parent.border.left:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -horizontalOffset, -verticalOffset)
+    parent.border.left:SetSnapToPixelGrid(false)
+    parent.border.left:SetTexelSnappingBias(0)
 
     parent.border.right:SetWidth(thickness)
     parent.border.right:SetPoint("TOPRIGHT", parent, "TOPRIGHT", horizontalOffset, verticalOffset)
     parent.border.right:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", horizontalOffset, -verticalOffset)
+    parent.border.right:SetSnapToPixelGrid(false)
+    parent.border.right:SetTexelSnappingBias(0)
 
     function parent:SetBorderColor(r, g, b)
         for _, tex in pairs(parent.border) do
@@ -348,3 +397,16 @@ function LRP:StopGlow(frame, id, glowType)
         LCG.ProcGlow_Stop(frame, id)
     end
 end
+
+function LRP:PlayCountdown(number, voice)
+    local soundFile = string.format("Interface\\AddOns\\TimelineReminders\\Media\\TTS\\%s\\%s.mp3", voice, number)
+
+    PlaySoundFile(soundFile, "MASTER")
+end
+
+local eventFrame = CreateFrame("Frame")
+
+eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+eventFrame:SetScript("OnEvent", UpdatePlayerInfo)

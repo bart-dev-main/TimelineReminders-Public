@@ -12,6 +12,7 @@ LRFont.xml
 
 Compatibility.lua
 GlobalSettings.lua
+Locales.lua
 Modernize.lua
 Utility.lua
 TextFormatter.lua
@@ -19,6 +20,8 @@ TimelineData.lua
 
 # Timeline data
 TimelineData/Debug/Shriekwing.lua
+TimelineData/Debug/Baleroc.lua
+TimelineData/Debug/Ragnaros.lua
 TimelineData/Debug/AffrontOfChallengers.lua
 
 TimelineData/TWW/Raids/NerubarPalace/Ulgrax.lua
